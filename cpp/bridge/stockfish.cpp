@@ -92,20 +92,19 @@ int main(int argc, char* argv[]) {
 
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_init(JNIEnv * /*env*/, jobject /*thisz*/) {
+Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_init(JNIEnv * /env/, jobject /thisz/) {
     stockfish_init();
 }
 
-
 extern "C"
 JNIEXPORT void JNICALL
-Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_main(JNIEnv * /*env*/, jobject /*thisz*/) {
+Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_main(JNIEnv * /env/, jobject /thisz/) {
     stockfish_main();
 }
 
 extern "C"
 JNIEXPORT jstring JNICALL
-Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_readStdOut(JNIEnv * env, jobject /*thisz*/) {
+Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_readStdOut(JNIEnv * env, jobject /thisz/) {
     char *output = stockfish_stdout_read();
     // An error occured
     if (output == NULL) {
@@ -117,7 +116,7 @@ Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_readStdOut(J
 
 extern "C"
 JNIEXPORT jboolean JNICALL
-Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_writeStdIn(JNIEnv * env, jobject /*thisz*/, jstring command) {
+Java_com_reactnativestockfishchessengine_StockfishChessEngineModule_writeStdIn(JNIEnv * env, jobject /thisz/, jstring command) {
     ssize_t result;
 
     jboolean isCopy;
