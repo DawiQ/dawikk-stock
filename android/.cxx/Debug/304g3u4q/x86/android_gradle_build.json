@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "D:\\_Mobile\\ChessEngine\\node_modules\\react-native-stockfish-android\\android\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\Dawid\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "D:\\_Mobile\\ChessEngine\\node_modules\\react-native-stockfish-android\\android\\.cxx\\Debug\\304g3u4q\\x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\Dawid\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "D:\\_Mobile\\ChessEngine\\node_modules\\react-native-stockfish-android\\android\\.cxx\\Debug\\304g3u4q\\x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "stockfish::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "x86",
+      "artifactName": "stockfish",
+      "output": "D:\\_Mobile\\ChessEngine\\node_modules\\react-native-stockfish-android\\android\\build\\intermediates\\cxx\\Debug\\304g3u4q\\obj\\x86\\libstockfish.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "C:\\Users\\Dawid\\AppData\\Local\\Android\\Sdk\\ndk\\26.1.10909125\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "cppCompilerExecutable": "C:\\Users\\Dawid\\AppData\\Local\\Android\\Sdk\\ndk\\26.1.10909125\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

@@ -1,0 +1,1 @@
+D:\_Mobile\ChessEngine\node_modules\react-native-stockfish-android\android\build\intermediates\cxx\Debug\304g3u4q\obj\armeabi-v7a

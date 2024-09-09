@@ -1,0 +1,25 @@
+# ninja log v5
+10	2749	7475610758973528	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/bitbase.cpp.o	abdfdd08568b3cca
+48	2975	7475610761512377	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/movepick.cpp.o	7a1e300d52b3468f
+17	3073	7475610762461854	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/bitboard.cpp.o	8bf688083bc91932
+29	3527	7475610765862177	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/material.cpp.o	1022ab5fc04a03df
+62	4463	7475610776151241	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/movegen.cpp.o	70b6a00252639c6e
+41	4610	7475610777767725	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/misc.cpp.o	e692c1b98f2a4973
+23	4682	7475610778423186	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/endgame.cpp.o	8eb95d27f45238f8
+55	4783	7475610779520255	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/nnue/evaluate_nnue.cpp.o	fdf5b594c58c1c8
+1	4824	7475610779939795	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/benchmark.cpp.o	da13aa2871be7ea5
+2976	5963	7475610791203668	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/nnue/features/half_ka_v2_hm.cpp.o	998f56c7be20db18
+3074	6436	7475610795983589	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/pawns.cpp.o	1bee58cf42210f21
+4464	6694	7475610798722578	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/psqt.cpp.o	a9a1a3adcddac319
+4683	8101	7475610812668697	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/timeman.cpp.o	51c96868f982e053
+2765	8469	7475610816097243	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/position.cpp.o	9f33942f4b110fb
+4784	9057	7475610822024332	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/tt.cpp.o	80e8eeb13ce9f189
+36	9547	7475610826931975	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/evaluate.cpp.o	84a0512794d75179
+4825	9808	7475610829797473	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/thread.cpp.o	bac43cf4d9a2c45a
+5964	9929	7475610831004139	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/tune.cpp.o	c6575b5f5d6ef4e6
+6695	10791	7475610839681855	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/ucioption.cpp.o	c61afcd30957f477
+8101	11180	7475610843582755	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/bridge/stockfish.cpp.o	f7f86ebdd2c95ff3
+6437	11404	7475610845323106	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/uci.cpp.o	ea1ec0a6f8322720
+4612	11836	7475610849888764	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/search.cpp.o	d69dd0c068d823aa
+3528	12254	7475610854287612	CMakeFiles/stockfish.dir/D_/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/cpp/stockfish/src/syzygy/tbprobe.cpp.o	774d277395c45464
+12255	12540	7475610856459148	../../../../build/intermediates/cxx/Debug/304g3u4q/obj/arm64-v8a/libstockfish.so	a56fb8863dc2b669
