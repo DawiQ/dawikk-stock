@@ -1,1 +1,0 @@
-D:\_Mobile\ChessEngine\node_modules\react-native-stockfish-android\android\CMakeLists.txt

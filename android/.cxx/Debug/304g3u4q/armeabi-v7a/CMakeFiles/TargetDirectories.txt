@@ -1,3 +1,0 @@
-D:/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/android/.cxx/Debug/304g3u4q/armeabi-v7a/CMakeFiles/stockfish.dir
-D:/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/android/.cxx/Debug/304g3u4q/armeabi-v7a/CMakeFiles/edit_cache.dir
-D:/_Mobile/ChessEngine/node_modules/react-native-stockfish-android/android/.cxx/Debug/304g3u4q/armeabi-v7a/CMakeFiles/rebuild_cache.dir

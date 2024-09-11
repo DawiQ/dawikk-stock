@@ -1,2 +1,0 @@
-ninja: Entering directory `D:\_Mobile\ChessEngine\node_modules\react-native-stockfish-android\android\.cxx\Debug\304g3u4q\x86_64'
-ninja: no work to do.
