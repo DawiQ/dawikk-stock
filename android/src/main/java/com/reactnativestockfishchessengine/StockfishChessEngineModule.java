@@ -52,7 +52,7 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
         String nextContent = previous + tmp;
         if (nextContent.endsWith("\n")) {
           WritableMap result = processEngineOutput(nextContent.trim());
-          if (result != null && result.hasKey("type")) {
+          if ((lastDepth == 0 || lastDepth % 4 == 0) && result != null && result.hasKey("type")) {
             if (result.getString("type").equals("info")) {
               latestInfo = result;
             } else {
@@ -200,20 +200,6 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
     promise.resolve(null);
   }
 
-  // @ReactMethod
-  // public void sendCommand(String command, Promise promise) {
-  //   lastDepth = 0;
-  //   if (command.startsWith("position fen")) {
-  //     String fen = command.substring("position fen".length()).trim();
-  //     String[] fenParts = fen.split(" ");
-  //     if (fenParts.length > 1) {
-  //       isWhiteToMove = fenParts[1].equals("w");
-  //     }
-  //   }
-  //   writeStdIn(command);
-  //   promise.resolve(null);
-  // }
-
   @ReactMethod
   public void sendCommand(String command, Promise promise) {
     lastDepth = 0;
@@ -235,34 +221,8 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
 
   private void clearStdOut() {
     while (readStdOut() != null) {
-      // Czytaj i odrzucaj dane wyjściowe, aż bufor będzie pusty
     }
   }
-
-  // @ReactMethod
-  // public void sendCommand(String command, Promise promise) {
-  //   lastDepth = 0;
-  //   if (command.startsWith("position fen")) {
-  //     String fen = command.substring("position fen".length()).trim();
-  //     String[] fenParts = fen.split(" ");
-  //     if (fenParts.length > 1) {
-  //       isWhiteToMove = fenParts[1].equals("w");
-  //     }
-  //   } else if (command.equals("stop")) {
-  //     writeStdIn(command);
-  //     clearStdOut();
-  //     promise.resolve(null);
-  //     return;
-  //   }
-  //   writeStdIn(command);
-  //   promise.resolve(null);
-  // }
-
-  // private void clearStdOut() {
-  //   while (readStdOut() != null) {
-  //     // Czytaj i odrzucaj dane wyjściowe, aż bufor będzie pusty
-  //   }
-  // }
 
   public static native void init();
   public static native void main();
