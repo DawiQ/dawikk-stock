@@ -1,7 +1,6 @@
 package com.reactnativestockfishchessengine;
 
 import androidx.annotation.NonNull;
-
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -9,22 +8,35 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.module.annotations.ReactModule;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.Arguments;
+import java.util.*;
 
 @ReactModule(name = StockfishChessEngineModule.NAME)
 public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
-
   public static final String NAME = "StockfishChessEngine";
-
   protected Thread engineLineReader;
   protected Thread mainLoopThread;
   protected ReactApplicationContext reactContext;
 
   private int lastDepth = 0;
-  private String lastEvaluation = "";
-  private String lastBestMove = "";
-  private String lastPv = "";
+  private int lastDepthPV2 = 0;
   private boolean isWhiteToMove = true;
+  private Map<Integer, PVInfo> pvLines = new HashMap<>();
+
+  private static class PVInfo {
+    String evaluation;
+    String bestMove;
+    String line;
+    int depth;
+    
+    PVInfo(String evaluation, String bestMove, String line, int depth) {
+      this.evaluation = evaluation;
+      this.bestMove = bestMove;
+      this.line = line;
+      this.depth = depth;
+    }
+  }
 
   public StockfishChessEngineModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -39,36 +51,25 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
 
   protected void loopReadingEngineOutput() {
     String previous = "";
-    int timeoutMs = 30;
+    int timeoutMs = 100;
+    
     while (true) {
       if (Thread.currentThread().isInterrupted()) {
         break;
       }
-      
-      WritableMap latestInfo = null;
 
       String tmp = readStdOut();
       if (tmp != null) {
         String nextContent = previous + tmp;
         if (nextContent.endsWith("\n")) {
           WritableMap result = processEngineOutput(nextContent.trim());
-          if ((lastDepth == 0 || lastDepth % 4 == 0) && result != null && result.hasKey("type")) {
-            if (result.getString("type").equals("info")) {
-              latestInfo = result;
-            } else {
-              sendEvent("stockfish-analyzed-output", result);
-            }
+          if (result != null && result.hasKey("type")) {
+            sendEvent("stockfish-analyzed-output", result);
           }
           previous = "";
-        }
-        else {
+        } else {
           previous = nextContent;
         }
-      }
-
-      if (latestInfo != null) {
-        sendEvent("stockfish-analyzed-output", latestInfo);
-        latestInfo = null;
       }
 
       try {
@@ -89,49 +90,92 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
     if (line.contains("info") && line.contains("score") && line.contains("pv")) {
       String[] parts = line.split(" ");
       
-      int scoreIndex = -1, depthIndex = -1, pvIndex = -1;
+      int scoreIndex = -1, depthIndex = -1, pvIndex = -1, multipvIndex = -1;
       for (int i = 0; i < parts.length; i++) {
         if (parts[i].equals("score")) scoreIndex = i;
         if (parts[i].equals("depth")) depthIndex = i;
         if (parts[i].equals("pv")) pvIndex = i;
+        if (parts[i].equals("multipv")) multipvIndex = i;
       }
 
+      // Zmiana: pozwalamy na brak multipv dla kompatybilności
       if (scoreIndex != -1 && depthIndex != -1 && pvIndex != -1) {
         String scoreType = parts[scoreIndex + 1];
         String scoreValue = parts[scoreIndex + 2];
-        int depth = Integer.parseInt(parts[depthIndex + 1]);
         
-        if (depth >= lastDepth) {
-          lastDepth = depth;
-          
-          String evaluation = "";
-          if (scoreType.equals("cp")) {
-            double score = Double.parseDouble(scoreValue) / 100.0;
-            evaluation = String.format("%.2f", isWhiteToMove ? score : -score);
-            evaluation = evaluation.replace(',', '.');
-          } else { // mate
-            evaluation = (scoreValue.startsWith("-") ? "-M" : "M") + Math.abs(Integer.parseInt(scoreValue));
-            if (!isWhiteToMove) {
-              evaluation = evaluation.startsWith("-") ? evaluation.substring(1) : "-" + evaluation;
-            }
-          }
-          
-          StringBuilder pvBuilder = new StringBuilder();
-          for (int i = pvIndex + 1; i < parts.length; i++) {
-            pvBuilder.append(parts[i]).append(" ");
-          }
-          String pv = pvBuilder.toString().trim();
-          String bestMove = pv.split(" ")[0];
-
-          result.putString("type", "info");
-          result.putString("evaluation", evaluation);
-          result.putString("bestMove", bestMove);
-          result.putString("bestLine", pv);
-          result.putInt("depth", depth);
-          return result;
+        int depth = Integer.parseInt(parts[depthIndex + 1]);
+        int pvNumber = multipvIndex != -1 ? Integer.parseInt(parts[multipvIndex + 1]) : 1;
+        
+        // Update lastDepth only if the current PV1's depth is greater
+        if (pvNumber == 1 && depth > lastDepth) {
+            lastDepth = depth;
         }
+        
+        if (pvNumber == 2 && depth > lastDepthPV2) {
+            lastDepthPV2 = depth;
+        }
+
+        if (pvNumber == 1 && lastDepth >= 0 && lastDepth % 4 != 0) {
+          return null;
+        }
+
+        if (pvNumber == 2 && lastDepthPV2 >= 0 && lastDepthPV2 % 4 != 0) {
+          return null;
+        }
+
+        String evaluation = "";
+        if (scoreType.equals("cp")) {
+          double score = Double.parseDouble(scoreValue) / 100.0;
+          evaluation = String.format("%.2f", isWhiteToMove ? score : -score);
+          evaluation = evaluation.replace(',', '.');
+        } else { // mate
+          evaluation = (scoreValue.startsWith("-") ? "-M" : "M") + Math.abs(Integer.parseInt(scoreValue));
+          if (!isWhiteToMove) {
+            evaluation = evaluation.startsWith("-") ? evaluation.substring(1) : "-" + evaluation;
+          }
+        }
+        
+        StringBuilder pvBuilder = new StringBuilder();
+        for (int i = pvIndex + 1; i < parts.length; i++) {
+          pvBuilder.append(parts[i]).append(" ");
+        }
+        String pv = pvBuilder.toString().trim();
+        String bestMove = pv.split(" ")[0];
+
+        // Aktualizuj lub dodaj nową linię PV
+        pvLines.put(pvNumber, new PVInfo(evaluation, bestMove, pv, depth));
+        
+        // Przygotuj tablice dla wszystkich aktualnych linii
+        WritableArray evaluations = Arguments.createArray();
+        WritableArray bestMoves = Arguments.createArray();
+        WritableArray lines = Arguments.createArray();
+        WritableArray depths = Arguments.createArray();
+        
+        // Sortuj linie według numeru PV
+        List<Map.Entry<Integer, PVInfo>> sortedEntries = new ArrayList<>(pvLines.entrySet());
+        Collections.sort(sortedEntries, (a, b) -> a.getKey() - b.getKey());
+        
+        // Dodaj wszystkie linie do tablic
+        for (Map.Entry<Integer, PVInfo> entry : sortedEntries) {
+          PVInfo info = entry.getValue();
+          evaluations.pushString(info.evaluation);
+          bestMoves.pushString(info.bestMove);
+          lines.pushString(info.line);
+          depths.pushInt(info.depth);
+        }
+
+        result.putString("type", "info");
+        result.putArray("evaluations", evaluations);
+        result.putArray("bestMoves", bestMoves);
+        result.putArray("lines", lines);
+        result.putArray("depths", depths);
+        result.putInt("depth", lastDepth); // Dodaj aktualną głębokość
+        
+        return result;
       }
     } else if (line.startsWith("bestmove")) {
+      pvLines.clear();
+      lastDepth = 0; // Reset głębokości przy nowym ruchu
       String[] parts = line.split(" ");
       if (parts.length > 1) {
         result.putString("type", "bestmove");
@@ -141,7 +185,7 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
     }
 
     return null;
-  }
+}
 
   private void sendEvent(String eventName, WritableMap params) {
     reactContext
@@ -160,23 +204,17 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void mainLoop(Promise promise) {
     init();
-    engineLineReader =
-      new Thread(
-        new Runnable() {
-          public void run() {
-            loopReadingEngineOutput();
-          }
-        }
-      );
+    engineLineReader = new Thread(new Runnable() {
+      public void run() {
+        loopReadingEngineOutput();
+      }
+    });
     engineLineReader.start();
-    mainLoopThread = 
-      new Thread(
-        new Runnable() {
-          public void run() {
-            main();
-          }
-        }
-      );
+    mainLoopThread = new Thread(new Runnable() {
+      public void run() {
+        main();
+      }
+    });
     mainLoopThread.start();
     promise.resolve(null);
   }
@@ -197,31 +235,32 @@ public class StockfishChessEngineModule extends ReactContextBaseJavaModule {
       engineLineReader.interrupt();
     }
 
+    pvLines.clear();
     promise.resolve(null);
   }
 
   @ReactMethod
   public void sendCommand(String command, Promise promise) {
-    lastDepth = 0;
     if (command.startsWith("position fen")) {
       String fen = command.substring("position fen".length()).trim();
       String[] fenParts = fen.split(" ");
+      lastDepth = 0;
+      lastDepthPV2 = 0;
       if (fenParts.length > 1) {
         isWhiteToMove = fenParts[1].equals("w");
       }
-    }
-    writeStdIn(command);
-    
-    if (command.equals("stop")) {
+      pvLines.clear();
+    } else if (command.equals("stop")) {
+      pvLines.clear();
       clearStdOut();
     }
-    
+
+    writeStdIn(command);
     promise.resolve(null);
   }
 
   private void clearStdOut() {
-    while (readStdOut() != null) {
-    }
+    while (readStdOut() != null) {}
   }
 
   public static native void init();
