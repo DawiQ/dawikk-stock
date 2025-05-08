@@ -76,11 +76,34 @@ void *listenerThreadFunction(void *arg)
         if ([line hasPrefix:@"info"] && [line containsString:@"score"] && [line containsString:@"pv"]) {
             // Parse and send analyzed output
             [self sendAnalyzedOutput:line];
+        } else if ([line hasPrefix:@"bestmove"]) {
+            // Parse and send bestmove output as structured data
+            [self sendBestMoveOutput:line];
         } else {
             // Send regular output
             [self sendEventWithName:@"stockfish-output" body:line];
         }
     }
+}
+
+- (void)sendBestMoveOutput:(NSString *)line
+{
+    // Format: "bestmove e7e6 ponder c2c3"
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    result[@"type"] = @"bestmove";
+    
+    // Extract the best move
+    NSArray *parts = [line componentsSeparatedByString:@" "];
+    if (parts.count >= 2) {
+        result[@"move"] = parts[1];
+        
+        // Extract ponder move if available
+        if (parts.count >= 4 && [parts[2] isEqualToString:@"ponder"]) {
+            result[@"ponder"] = parts[3];
+        }
+    }
+    
+    [self sendEventWithName:@"stockfish-analyzed-output" body:result];
 }
 
 - (void)sendAnalyzedOutput:(NSString *)line

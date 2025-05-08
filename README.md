@@ -1,4 +1,4 @@
-# dawikk-stockfish
+# dawikk-stock
 
 A React Native library that integrates the powerful Stockfish chess engine for both iOS and Android platforms.
 
@@ -11,24 +11,14 @@ A React Native library that integrates the powerful Stockfish chess engine for b
 - Bundled with the latest Stockfish engine (version 17)
 - Performance optimized for mobile devices
 
-## Prerequisites
-
-### Android
-- Android SDK build tools
-- Android SDK Command line tools
-
-### iOS
-- Xcode 12 or newer
-- CocoaPods
-
 ## Installation
 
 ```sh
 # Using npm
-npm install react-native-stockfish --save
+npm install dawikk-stock --save
 
 # Or using Yarn
-yarn add react-native-stockfish
+yarn add dawikk-stock
 ```
 
 ### iOS Setup
@@ -37,56 +27,26 @@ yarn add react-native-stockfish
 cd ios && pod install
 ```
 
-## Usage
+## Basic Usage
 
 ```javascript
-import Stockfish from 'react-native-stockfish';
+import Stockfish from 'dawikk-stock';
 
-// Initialize the engine when your component mounts
-useEffect(() => {
-  const setupEngine = async () => {
-    try {
-      // Initialize the engine
-      await Stockfish.init();
-      
-      // Set up listeners for engine output
-      const messageListener = Stockfish.addMessageListener((message) => {
-        console.log('Stockfish message:', message);
-        
-        // Look for bestmove messages to handle them
-        if (message.startsWith('bestmove ')) {
-          const moveStr = message.split(' ')[1];
-          console.log('Engine suggested move:', moveStr);
-        }
-      });
-      
-      // Optional: Set up analysis listener for structured data
-      const analysisListener = Stockfish.addAnalysisListener((data) => {
-        console.log('Analysis data:', data);
-      });
-      
-      // Start UCI communication
-      await Stockfish.sendCommand('uci');
-      await Stockfish.sendCommand('isready');
-      
-      // Set position and start analysis
-      await Stockfish.sendCommand('position startpos');
-      await Stockfish.sendCommand('go depth 15');
-      
-      // Clean up when component unmounts
-      return () => {
-        messageListener();  // Remove message listener
-        analysisListener(); // Remove analysis listener
-        Stockfish.sendCommand('quit');
-        Stockfish.shutdown();
-      };
-    } catch (error) {
-      console.error('Error setting up Stockfish:', error);
-    }
-  };
-  
-  setupEngine();
-}, []);
+// Initialize the engine
+await Stockfish.init();
+
+// Set up a listener for engine output
+const unsubscribeMessage = Stockfish.addMessageListener((message) => {
+  console.log('Engine message:', message);
+});
+
+// Send UCI commands
+await Stockfish.sendCommand('position startpos');
+await Stockfish.sendCommand('go depth 15');
+
+// Clean up when done
+unsubscribeMessage();
+await Stockfish.shutdown();
 ```
 
 ## API Reference
@@ -139,9 +99,83 @@ const unsubscribe = Stockfish.addAnalysisListener((data) => {
 unsubscribe();
 ```
 
-### Events
+#### `addBestMoveListener(callback)`
+Adds a dedicated listener for "bestmove" events (computer's chosen moves). Perfect for implementing a game against the computer. Returns a function to remove the listener.
 
-The library emits two types of events:
+```javascript
+const unsubscribe = Stockfish.addBestMoveListener((data) => {
+  console.log('Computer chose move:', data.move);
+  // Make the move on your chess board
+});
+
+// Later, to remove the listener
+unsubscribe();
+```
+
+#### `analyzePosition(fen, options)`
+Helper method to set a position and start analysis.
+
+```javascript
+await Stockfish.analyzePosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', {
+  depth: 20,
+  multiPv: 3,
+  movetime: 5000
+});
+```
+
+#### `stopAnalysis()`
+Stops the current analysis.
+
+```javascript
+await Stockfish.stopAnalysis();
+```
+
+#### `getComputerMove(fen, movetime, depth)`
+Helper method to get a computer move in a game. Will trigger a `bestmove` event that can be captured with `addBestMoveListener`.
+
+```javascript
+// Computer has 1 second to choose a move
+await Stockfish.getComputerMove('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 1000, 15);
+```
+
+### Data Structures
+
+#### AnalysisData
+```typescript
+interface AnalysisData {
+  type: 'info' | 'bestmove';
+  depth?: number;
+  score?: number;
+  mate?: number;
+  bestMove?: string;
+  line?: string;
+  move?: string;
+  // Other fields
+}
+```
+
+#### BestMoveData
+```typescript
+interface BestMoveData {
+  type: 'bestmove';
+  move: string;
+  ponder?: string;
+}
+```
+
+#### AnalysisOptions
+```typescript
+interface AnalysisOptions {
+  depth?: number;
+  multiPv?: number;
+  movetime?: number;
+  nodes?: number;
+}
+```
+
+## Events
+
+The library emits three types of events:
 
 1. **Raw Messages** - Plain text output from the Stockfish engine
    - These include UCI protocol responses like `uciok`, `readyok`, and `bestmove e2e4`
@@ -150,6 +184,98 @@ The library emits two types of events:
 2. **Analysis Data** - Structured data parsed from engine output
    - This data may include evaluation scores, depth, best moves, etc.
    - Access this via `addAnalysisListener`
+
+3. **Computer Moves** - Dedicated events for computer moves
+   - Contains only the final move choice from the engine
+   - Access this via `addBestMoveListener`
+
+## Usage Examples
+
+### Position Analysis
+
+```javascript
+import Stockfish from 'dawikk-stock';
+
+// Initialize the engine
+await Stockfish.init();
+
+// Set up analysis listener
+const unsubscribe = Stockfish.addAnalysisListener((data) => {
+  if (data.type === 'info') {
+    console.log(`Depth: ${data.depth}, Score: ${data.score}, Best Move: ${data.bestMove}`);
+  }
+});
+
+// Analyze a position
+await Stockfish.analyzePosition('r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3', {
+  depth: 18,
+  multiPv: 3
+});
+
+// Stop after 5 seconds
+setTimeout(async () => {
+  await Stockfish.stopAnalysis();
+  unsubscribe();
+  await Stockfish.shutdown();
+}, 5000);
+```
+
+### Playing Against the Computer
+
+```javascript
+import Stockfish from 'dawikk-stock';
+import { Chess } from 'chess.js'; // Assuming you use chess.js
+
+class ChessGame {
+  constructor() {
+    this.game = new Chess();
+    this.initialize();
+  }
+
+  async initialize() {
+    // Initialize engine
+    await Stockfish.init();
+    
+    // Listen for computer moves
+    this.unsubscribe = Stockfish.addBestMoveListener((data) => {
+      // Execute computer's move
+      this.game.move({
+        from: data.move.substring(0, 2),
+        to: data.move.substring(2, 4),
+        promotion: data.move.length > 4 ? data.move[4] : undefined
+      });
+      
+      console.log('New position:', this.game.fen());
+      console.log('History:', this.game.history({ verbose: true }));
+    });
+  }
+
+  // Method to make player's move
+  makeMove(from, to, promotion) {
+    // Check if move is legal
+    const move = this.game.move({ from, to, promotion });
+    
+    if (move) {
+      // Ask computer to respond
+      Stockfish.getComputerMove(this.game.fen(), 1000, 15);
+      return true;
+    }
+    
+    return false;
+  }
+
+  // Clean up resources
+  cleanup() {
+    this.unsubscribe();
+    Stockfish.shutdown();
+  }
+}
+
+// Usage
+const game = new ChessGame();
+game.makeMove('e2', 'e4'); // Player makes first move
+// ... after receiving bestmove event, computer responds automatically
+```
 
 ## Important Notes
 
@@ -170,32 +296,17 @@ For proper operation, follow this initialization sequence:
 The Stockfish engine communicates moves in the UCI format (e.g., `e2e4`). To handle these:
 
 ```javascript
-Stockfish.addMessageListener((message) => {
-  if (message.startsWith('bestmove ')) {
-    const parts = message.split(' ');
-    if (parts.length >= 2) {
-      const moveStr = parts[1];
-      // Parse UCI format to your chess representation
-      const from = moveStr.substring(0, 2);
-      const to = moveStr.substring(2, 4);
-      const promotion = moveStr.length > 4 ? moveStr[4] : undefined;
-      
-      // Now you can use these coordinates with a chess library like chess.js
-      chess.move({from, to, promotion});
-    }
-  }
+Stockfish.addBestMoveListener((data) => {
+  const moveStr = data.move;
+  // Parse UCI format to your chess representation
+  const from = moveStr.substring(0, 2);
+  const to = moveStr.substring(2, 4);
+  const promotion = moveStr.length > 4 ? moveStr[4] : undefined;
+  
+  // Now you can use these coordinates with a chess library like chess.js
+  chess.move({from, to, promotion});
 });
 ```
-
-### Position Validation
-
-Always validate positions before sending them to the engine:
-
-- Check for legal positions using a library like [chess.js](https://github.com/jhlywa/chess.js)
-- Ensure the position has one king for each side
-- Verify that the non-moving side's king is not in check
-
-Sending invalid positions can cause the engine to crash or produce unexpected results.
 
 ## Common UCI Commands
 
@@ -224,178 +335,8 @@ await Stockfish.sendCommand('setoption name Skill Level value 10');
 await Stockfish.sendCommand('stop');
 ```
 
-## Example: Complete Chess Application
-
-```jsx
-import React, { useEffect, useState } from 'react';
-import { View, Text, Button } from 'react-native';
-import Stockfish from 'react-native-stockfish';
-import { Chess } from 'chess.js';
-
-export default function ChessEngine() {
-  const [engineReady, setEngineReady] = useState(false);
-  const [thinking, setThinking] = useState(false);
-  const [evaluation, setEvaluation] = useState(null);
-  const [game] = useState(new Chess());
-
-  useEffect(() => {
-    let messageUnsubscribe, analysisUnsubscribe;
-    
-    const initEngine = async () => {
-      try {
-        // Initialize engine
-        await Stockfish.init();
-        
-        // Set up listeners
-        messageUnsubscribe = Stockfish.addMessageListener(handleEngineMessage);
-        analysisUnsubscribe = Stockfish.addAnalysisListener(handleEngineAnalysis);
-        
-        // Start UCI protocol
-        await Stockfish.sendCommand('uci');
-      } catch (error) {
-        console.error('Failed to initialize engine:', error);
-      }
-    };
-    
-    initEngine();
-    
-    // Cleanup
-    return () => {
-      if (messageUnsubscribe) messageUnsubscribe();
-      if (analysisUnsubscribe) analysisUnsubscribe();
-      Stockfish.sendCommand('quit');
-      Stockfish.shutdown();
-    };
-  }, []);
-  
-  const handleEngineMessage = (message) => {
-    console.log('Engine message:', message);
-    
-    if (message.includes('uciok')) {
-      Stockfish.sendCommand('isready');
-    } 
-    else if (message.includes('readyok')) {
-      setEngineReady(true);
-    }
-    else if (message.startsWith('bestmove ')) {
-      setThinking(false);
-      
-      const parts = message.split(' ');
-      if (parts.length >= 2) {
-        const moveStr = parts[1];
-        
-        if (moveStr !== '(none)' && moveStr !== 'NULL') {
-          // Parse UCI format
-          const from = moveStr.substring(0, 2);
-          const to = moveStr.substring(2, 4);
-          const promotion = moveStr.length > 4 ? moveStr[4] : undefined;
-          
-          // Make the move
-          game.move({from, to, promotion});
-          
-          // Update state with new position
-          setEvaluation(null);
-        }
-      }
-    }
-  };
-  
-  const handleEngineAnalysis = (data) => {
-    if (data.type === 'info' && data.score !== undefined) {
-      setEvaluation(data.score);
-    }
-  };
-  
-  const getEngineMove = async () => {
-    if (!engineReady || thinking) return;
-    
-    setThinking(true);
-    
-    // Send current position to engine
-    await Stockfish.sendCommand(`position fen ${game.fen()}`);
-    
-    // Set engine options
-    await Stockfish.sendCommand('setoption name Skill Level value 10');
-    
-    // Start calculation
-    await Stockfish.sendCommand('go movetime 1000');
-  };
-  
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-      <Text style={{ marginBottom: 20 }}>
-        Engine status: {engineReady ? 'Ready' : 'Initializing...'}
-      </Text>
-      
-      <Text style={{ marginBottom: 20 }}>
-        Current FEN: {game.fen()}
-      </Text>
-      
-      {evaluation !== null && (
-        <Text style={{ marginBottom: 20 }}>
-          Evaluation: {evaluation > 0 ? '+' : ''}{evaluation.toFixed(2)}
-        </Text>
-      )}
-      
-      <Button
-        title={thinking ? "Engine thinking..." : "Get Engine Move"}
-        onPress={getEngineMove}
-        disabled={!engineReady || thinking}
-      />
-      
-      <Button
-        title="Reset Position"
-        onPress={() => {
-          game.reset();
-          setEvaluation(null);
-        }}
-        disabled={thinking}
-      />
-    </View>
-  );
-}
-```
-
-## Troubleshooting
-
-### Engine not responding to commands
-
-Ensure you're following the proper UCI protocol initialization sequence:
-1. Initialize the engine
-2. Send 'uci' command
-3. Wait for 'uciok' response
-4. Send 'isready' command
-5. Wait for 'readyok' response
-
-### Communication issues or crashed engine
-
-If you experience issues with the engine crashing or not responding:
-
-1. Check that positions sent to the engine are valid
-2. Ensure you're properly handling the engine startup and shutdown
-3. Make sure to remove event listeners when your component unmounts
-4. For complex positions, increase the hash size: `await Stockfish.sendCommand('setoption name Hash value 64')`
-
-### Debugging engine output
-
-To get more insight into what's happening with the engine, log all messages:
-
-```javascript
-Stockfish.addMessageListener((message) => {
-  console.log('DEBUG Stockfish raw output:', message);
-});
-```
-
-## Updating Stockfish Version
-
-If you need to update the Stockfish engine version:
-
-1. Replace the code in the `cpp/stockfish` directory with the new version's source code
-2. Update the NNUE file references in `cpp/bridge/stockfish_bridge.cpp`
-3. Rebuild the library
-
 ## License
 
 This project is licensed under the GPL-3.0 License, as it includes Stockfish code which is GPL-3.0 licensed.
 
-For more information about Stockfish, visit [stockfishchess.org](https://stockfishchess.org/).
+For more information about Stockfish, visit [stockfishchess.org](https://stockfishchess.org/)

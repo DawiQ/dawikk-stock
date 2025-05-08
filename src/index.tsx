@@ -24,8 +24,15 @@ export interface AnalysisData {
   [key: string]: any;
 }
 
+export interface BestMoveData {
+  type: 'bestmove';
+  move: string;
+  ponder?: string;
+}
+
 type MessageListener = (message: string) => void;
 type AnalysisListener = (data: AnalysisData) => void;
+type BestMoveListener = (data: BestMoveData) => void;
 
 // Obsługa błędu linkowania
 const LINKING_ERROR =
@@ -54,6 +61,7 @@ class Stockfish {
   engineInitialized: boolean;
   private listeners: MessageListener[];
   private analysisListeners: AnalysisListener[];
+  private bestMoveListeners: BestMoveListener[];
   private outputSubscription: any;
   private analysisSubscription: any;
   
@@ -61,6 +69,7 @@ class Stockfish {
     this.engineInitialized = false;
     this.listeners = [];
     this.analysisListeners = [];
+    this.bestMoveListeners = [];
     
     // Powiązanie metod
     this.init = this.init.bind(this);
@@ -68,8 +77,10 @@ class Stockfish {
     this.shutdown = this.shutdown.bind(this);
     this.addMessageListener = this.addMessageListener.bind(this);
     this.addAnalysisListener = this.addAnalysisListener.bind(this);
+    this.addBestMoveListener = this.addBestMoveListener.bind(this);
     this.removeMessageListener = this.removeMessageListener.bind(this);
     this.removeAnalysisListener = this.removeAnalysisListener.bind(this);
+    this.removeBestMoveListener = this.removeBestMoveListener.bind(this);
     this.handleOutput = this.handleOutput.bind(this);
     this.handleAnalysisOutput = this.handleAnalysisOutput.bind(this);
     
@@ -153,8 +164,15 @@ class Stockfish {
    * Obsługuje przeanalizowane dane wyjściowe z silnika.
    * @param data Przeanalizowane dane z silnika Stockfish.
    */
-  handleAnalysisOutput(data: AnalysisData): void {
-    this.analysisListeners.forEach(listener => listener(data));
+  handleAnalysisOutput(data: AnalysisData | BestMoveData): void {
+    // Wysyłamy dane do wszystkich słuchaczy analizy
+    this.analysisListeners.forEach(listener => listener(data as AnalysisData));
+    
+    // Dodatkowo wysyłamy zdarzenia bestmove do dedykowanych słuchaczy
+    if (data.type === 'bestmove') {
+      this.bestMoveListeners.forEach(listener => 
+        listener(data as BestMoveData));
+    }
   }
   
   /**
@@ -178,6 +196,16 @@ class Stockfish {
   }
   
   /**
+   * Dodaje nasłuchiwacz ruchów komputera.
+   * @param listener Funkcja do wywołania dla każdego ruchu komputera.
+   * @returns Funkcja usuwająca nasłuchiwacz.
+   */
+  addBestMoveListener(listener: BestMoveListener): () => void {
+    this.bestMoveListeners.push(listener);
+    return () => this.removeBestMoveListener(listener);
+  }
+  
+  /**
    * Usuwa nasłuchiwacz wiadomości.
    * @param listener Nasłuchiwacz do usunięcia.
    */
@@ -196,6 +224,17 @@ class Stockfish {
     const index = this.analysisListeners.indexOf(listener);
     if (index !== -1) {
       this.analysisListeners.splice(index, 1);
+    }
+  }
+  
+  /**
+   * Usuwa nasłuchiwacz ruchów komputera.
+   * @param listener Nasłuchiwacz do usunięcia.
+   */
+  removeBestMoveListener(listener: BestMoveListener): void {
+    const index = this.bestMoveListeners.indexOf(listener);
+    if (index !== -1) {
+      this.bestMoveListeners.splice(index, 1);
     }
   }
   
@@ -232,6 +271,19 @@ class Stockfish {
   }
   
   /**
+   * Metoda pomocnicza do uzyskania ruchu komputera w grze.
+   * @param fen Notacja FEN aktualnej pozycji.
+   * @param movetime Czas w milisekundach na ruch (domyślnie 1000ms).
+   * @param depth Głębokość analizy (domyślnie 15).
+   */
+  async getComputerMove(fen: string, movetime: number = 1000, depth: number = 15): Promise<void> {
+    await this.sendCommand('uci');
+    await this.sendCommand('isready');
+    await this.sendCommand(`position fen ${fen}`);
+    await this.sendCommand(`go movetime ${movetime} depth ${depth}`);
+  }
+  
+  /**
    * Czyści zasoby po zakończeniu korzystania z biblioteki.
    */
   destroy(): void {
@@ -240,6 +292,7 @@ class Stockfish {
     this.analysisSubscription.remove();
     this.listeners = [];
     this.analysisListeners = [];
+    this.bestMoveListeners = [];
   }
 }
 
