@@ -36,12 +36,12 @@ type BestMoveListener = (data: BestMoveData) => void;
 
 // Obsługa błędu linkowania
 const LINKING_ERROR =
-  `The package 'react-native-stockfish' doesn't seem to be linked. Make sure: \n\n` +
+  `The package 'dawikk-stock' doesn't seem to be linked. Make sure: \n\n` +
   Platform.select({ ios: "- You have run 'pod install'\n", default: '' }) +
   '- You rebuilt the app after installing the package\n' +
   '- You are not using Expo Go\n';
 
-// Pobranie modułu natywnego
+// Pobranie modułu natywnego - poprawiona nazwa pakietu
 const StockfishModule = NativeModules.RNStockfishModule
   ? NativeModules.RNStockfishModule
   : new Proxy(
