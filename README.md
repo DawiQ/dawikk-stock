@@ -10,6 +10,10 @@ A React Native library that integrates the powerful Stockfish chess engine for b
 - Simple event-based API for communication with the engine
 - Bundled with the latest Stockfish engine (version 17)
 - Performance optimized for mobile devices
+- Configurable event throttling to prevent UI thread blocking
+- Selectable event emission to improve performance
+- MultiPV support for analyzing multiple lines simultaneously
+- Enhanced performance with latest analysis always available
 
 ## Installation
 
@@ -31,6 +35,19 @@ cd ios && pod install
 
 ```javascript
 import Stockfish from 'dawikk-stock';
+
+// Configure the engine (optional)
+Stockfish.setConfig({
+  throttling: {
+    analysisInterval: 200, // Emit analysis events every 200ms
+    messageInterval: 300   // Emit raw messages every 300ms
+  },
+  events: {
+    emitMessage: true,     // Enable/disable raw message events
+    emitAnalysis: true,    // Enable/disable analysis events
+    emitBestMove: true     // Enable/disable bestmove events
+  }
+});
 
 // Initialize the engine
 await Stockfish.init();
@@ -58,6 +75,23 @@ Initializes the Stockfish engine.
 
 ```javascript
 const success = await Stockfish.init();
+```
+
+#### `setConfig(config)`
+Configures the library's behavior regarding event throttling and emission. This method can be called at any time, even after initialization.
+
+```javascript
+Stockfish.setConfig({
+  throttling: {
+    analysisInterval: 200,  // Time in ms between analysis events
+    messageInterval: 300    // Time in ms between message events
+  },
+  events: {
+    emitMessage: true,      // Whether to emit raw message events
+    emitAnalysis: true,     // Whether to emit analysis events
+    emitBestMove: true      // Whether to emit bestMove events
+  }
+});
 ```
 
 #### `sendCommand(command)`
@@ -93,6 +127,13 @@ Adds a listener for parsed analysis data (structured data). Returns a function t
 ```javascript
 const unsubscribe = Stockfish.addAnalysisListener((data) => {
   console.log('Analysis data:', data);
+  
+  // For MultiPV analysis, you can access all lines through these arrays
+  if (data.bestMoves && data.bestMoves.length > 1) {
+    console.log('All best moves:', data.bestMoves);
+    console.log('All evaluations:', data.evaluations);
+    console.log('All lines:', data.lines);
+  }
 });
 
 // Later, to remove the listener
@@ -140,6 +181,21 @@ await Stockfish.getComputerMove('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w K
 
 ### Data Structures
 
+#### StockfishConfig
+```typescript
+interface StockfishConfig {
+  throttling: {
+    analysisInterval: number;  // Time in ms between analysis event emissions
+    messageInterval: number;   // Time in ms between message event emissions
+  };
+  events: {
+    emitMessage: boolean;      // Whether to emit raw message events
+    emitAnalysis: boolean;     // Whether to emit analysis events
+    emitBestMove: boolean;     // Whether to emit bestMove events
+  };
+}
+```
+
 #### AnalysisData
 ```typescript
 interface AnalysisData {
@@ -150,7 +206,12 @@ interface AnalysisData {
   bestMove?: string;
   line?: string;
   move?: string;
-  // Other fields
+  
+  // For MultiPV analysis
+  bestMoves?: string[];        // Array of best moves for each line
+  evaluations?: string[];      // Array of evaluations for each line
+  lines?: string[];            // Array of move sequences for each line
+  depths?: number[];           // Array of depths for each line
 }
 ```
 
@@ -180,18 +241,42 @@ The library emits three types of events:
 1. **Raw Messages** - Plain text output from the Stockfish engine
    - These include UCI protocol responses like `uciok`, `readyok`, and `bestmove e2e4`
    - Access these via `addMessageListener`
+   - Can be disabled with `setConfig({events: {emitMessage: false}})`
 
 2. **Analysis Data** - Structured data parsed from engine output
    - This data may include evaluation scores, depth, best moves, etc.
+   - Support for MultiPV (multiple lines) with arrays for bestMoves, evaluations, and lines
    - Access this via `addAnalysisListener`
+   - Can be disabled with `setConfig({events: {emitAnalysis: false}})`
 
 3. **Computer Moves** - Dedicated events for computer moves
    - Contains only the final move choice from the engine
    - Access this via `addBestMoveListener`
+   - Can be disabled with `setConfig({events: {emitBestMove: false}})`
+
+## Throttling Configuration
+
+To prevent UI thread blocking with rapid engine updates:
+
+```javascript
+// Configure throttling
+Stockfish.setConfig({
+  throttling: {
+    analysisInterval: 200,  // Emit analysis updates every 200ms max
+    messageInterval: 300    // Emit raw message updates every 300ms max
+  }
+});
+```
+
+The throttling system ensures:
+- Events are buffered and emitted at regular intervals
+- Only the most recent data is emitted, preventing outdated analysis
+- For MultiPV analysis, all lines are collected and emitted together
+- UI remains responsive even during intensive analysis
 
 ## Usage Examples
 
-### Position Analysis
+### Position Analysis with MultiPV
 
 ```javascript
 import Stockfish from 'dawikk-stock';
@@ -199,14 +284,36 @@ import Stockfish from 'dawikk-stock';
 // Initialize the engine
 await Stockfish.init();
 
-// Set up analysis listener
-const unsubscribe = Stockfish.addAnalysisListener((data) => {
-  if (data.type === 'info') {
-    console.log(`Depth: ${data.depth}, Score: ${data.score}, Best Move: ${data.bestMove}`);
+// Configure for performance
+Stockfish.setConfig({
+  throttling: {
+    analysisInterval: 200,
+    messageInterval: 300
+  },
+  events: {
+    emitMessage: false,  // Disable raw messages (not needed for analysis)
+    emitAnalysis: true,
+    emitBestMove: false  // Disable bestmove events (not needed for analysis)
   }
 });
 
-// Analyze a position
+// Set up analysis listener
+const unsubscribe = Stockfish.addAnalysisListener((data) => {
+  // For MultiPV analysis, we'll receive arrays of data
+  if (data.bestMoves && data.bestMoves.length > 0) {
+    console.log('Analysis depth:', Math.max(...data.depths));
+    
+    // Display each line
+    data.bestMoves.forEach((move, index) => {
+      console.log(`Line ${index + 1}:`);
+      console.log(`  Best move: ${move}`);
+      console.log(`  Evaluation: ${data.evaluations[index]}`);
+      console.log(`  Full line: ${data.lines[index]}`);
+    });
+  }
+});
+
+// Analyze a position with 3 lines
 await Stockfish.analyzePosition('r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3', {
   depth: 18,
   multiPv: 3
@@ -220,7 +327,7 @@ setTimeout(async () => {
 }, 5000);
 ```
 
-### Playing Against the Computer
+### Playing Against the Computer (Optimized)
 
 ```javascript
 import Stockfish from 'dawikk-stock';
@@ -233,6 +340,19 @@ class ChessGame {
   }
 
   async initialize() {
+    // Configure the engine for optimal performance in a game
+    Stockfish.setConfig({
+      throttling: {
+        analysisInterval: 200,
+        messageInterval: 300
+      },
+      events: {
+        emitMessage: false,  // No need for raw messages
+        emitAnalysis: false, // No need for analysis data
+        emitBestMove: true   // Only need the final move
+      }
+    });
+    
     // Initialize engine
     await Stockfish.init();
     
@@ -277,6 +397,37 @@ game.makeMove('e2', 'e4'); // Player makes first move
 // ... after receiving bestmove event, computer responds automatically
 ```
 
+## Advanced: Creating Multiple Instances
+
+For advanced use cases (like running multiple instances), you can create custom instances:
+
+```javascript
+import { Stockfish } from 'dawikk-stock'; // Import the class instead of the default instance
+
+// Create separate instances with different configurations
+const analysisEngine = new Stockfish({
+  throttling: { analysisInterval: 100, messageInterval: 200 },
+  events: { emitMessage: false, emitAnalysis: true, emitBestMove: false }
+});
+
+const gameEngine = new Stockfish({
+  throttling: { analysisInterval: 300, messageInterval: 400 },
+  events: { emitMessage: false, emitAnalysis: false, emitBestMove: true }
+});
+
+// Initialize both engines
+await analysisEngine.init();
+await gameEngine.init();
+
+// Use them independently
+analysisEngine.addAnalysisListener(data => console.log('Analysis:', data));
+gameEngine.addBestMoveListener(data => console.log('Game move:', data.move));
+
+// Clean up when done
+analysisEngine.destroy();
+gameEngine.destroy();
+```
+
 ## Important Notes
 
 ### Engine Initialization Sequence
@@ -308,6 +459,42 @@ Stockfish.addBestMoveListener((data) => {
 });
 ```
 
+## Performance Optimization Tips
+
+1. **Disable Unnecessary Events**: Use `setConfig()` to disable events you don't need
+   ```javascript
+   // For computer game, disable analysis events
+   Stockfish.setConfig({
+     events: { emitMessage: false, emitAnalysis: false, emitBestMove: true }
+   });
+   
+   // For position analysis, disable bestmove events
+   Stockfish.setConfig({
+     events: { emitMessage: false, emitAnalysis: true, emitBestMove: false }
+   });
+   ```
+
+2. **Adjust Throttling**: Increase intervals for smoother UI, decrease for more responsive analysis
+   ```javascript
+   // More responsive analysis (updates more frequently)
+   Stockfish.setConfig({
+     throttling: { analysisInterval: 100, messageInterval: 150 }
+   });
+   
+   // Smoother UI (less frequent updates)
+   Stockfish.setConfig({
+     throttling: { analysisInterval: 300, messageInterval: 400 }
+   });
+   ```
+
+3. **Minimize Listeners**: Remove listeners when not needed
+   ```javascript
+   const unsubscribe = Stockfish.addAnalysisListener(data => {/*...*/});
+   
+   // When done with analysis
+   unsubscribe();
+   ```
+
 ## Common UCI Commands
 
 Here are some common UCI commands you can send to the engine:
@@ -327,6 +514,10 @@ await Stockfish.sendCommand('go depth 20');
 
 // Start analysis with time limit (milliseconds)
 await Stockfish.sendCommand('go movetime 3000');
+
+// Start analysis with multiple lines (MultiPV)
+await Stockfish.sendCommand('setoption name MultiPV value 3');
+await Stockfish.sendCommand('go depth 20');
 
 // Limit engine strength (0-20)
 await Stockfish.sendCommand('setoption name Skill Level value 10');
