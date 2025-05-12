@@ -1,4 +1,3 @@
-// android/src/main/java/com/dawikk/stockfish/RNStockfishModule.java
 package com.dawikk.stockfish;
 
 import android.util.Log;
@@ -230,6 +229,16 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
         WritableMap result = Arguments.createMap();
         result.putString("type", "info");
 
+        // Extract multipv number if available
+        Pattern multipvPattern = Pattern.compile("multipv (\\d+)");
+        Matcher multipvMatcher = multipvPattern.matcher(line);
+        if (multipvMatcher.find()) {
+            result.putInt("multipv", Integer.parseInt(multipvMatcher.group(1)));
+        } else {
+            // Default to PV 1 if not specified
+            result.putInt("multipv", 1);
+        }
+
         // Extract depth
         Pattern depthPattern = Pattern.compile("depth (\\d+)");
         Matcher depthMatcher = depthPattern.matcher(line);
@@ -273,7 +282,7 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
         return reactContext.getFilesDir().getAbsolutePath();
     }
 
-    // Zamieniliśmy przestarzałą metodę onCatalystInstanceDestroy na nową metodę invalidate
+    // Properly handle module invalidation
     @Override
     public void invalidate() {
         if (engineRunning) {

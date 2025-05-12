@@ -72,6 +72,9 @@ void *listenerThreadFunction(void *arg)
     for (NSString *line in lines) {
         if (line.length == 0) continue;
         
+        // Send raw output to JavaScript
+        [self sendEventWithName:@"stockfish-output" body:line];
+        
         // Process analysis output (info depth, bestmove, etc.)
         if ([line hasPrefix:@"info"] && [line containsString:@"score"] && [line containsString:@"pv"]) {
             // Parse and send analyzed output
@@ -79,9 +82,6 @@ void *listenerThreadFunction(void *arg)
         } else if ([line hasPrefix:@"bestmove"]) {
             // Parse and send bestmove output as structured data
             [self sendBestMoveOutput:line];
-        } else {
-            // Send regular output
-            [self sendEventWithName:@"stockfish-output" body:line];
         }
     }
 }
@@ -108,9 +108,20 @@ void *listenerThreadFunction(void *arg)
 
 - (void)sendAnalyzedOutput:(NSString *)line
 {
-    // Parse the UCI output line (simplified for now)
+    // Parse the UCI output line
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
     result[@"type"] = @"info";
+    
+    // Extract multipv number if available
+    NSRegularExpression *multipvRegex = [NSRegularExpression regularExpressionWithPattern:@"multipv (\\d+)" options:0 error:nil];
+    NSTextCheckingResult *multipvMatch = [multipvRegex firstMatchInString:line options:0 range:NSMakeRange(0, line.length)];
+    if (multipvMatch) {
+        NSString *multipvStr = [line substringWithRange:[multipvMatch rangeAtIndex:1]];
+        result[@"multipv"] = @([multipvStr intValue]);
+    } else {
+        // Default to PV 1 if not specified
+        result[@"multipv"] = @(1);
+    }
     
     // Extract depth
     NSRegularExpression *depthRegex = [NSRegularExpression regularExpressionWithPattern:@"depth (\\d+)" options:0 error:nil];

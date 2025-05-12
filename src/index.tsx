@@ -1,6 +1,6 @@
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 
-// Definicje typów
+// Type definitions
 export interface AnalysisOptions {
   depth?: number;
   multiPv?: number;
@@ -30,18 +30,46 @@ export interface BestMoveData {
   ponder?: string;
 }
 
+// Configuration for event throttling and filtering
+export interface StockfishConfig {
+  // Throttling intervals (in ms)
+  throttling: {
+    analysisInterval: number;  // Time between analysis event emissions
+    messageInterval: number;   // Time between message event emissions
+  };
+  // Event emission control
+  events: {
+    emitMessage: boolean;      // Whether to emit raw message events
+    emitAnalysis: boolean;     // Whether to emit analysis events
+    emitBestMove: boolean;     // Whether to emit bestMove events
+  };
+}
+
 type MessageListener = (message: string) => void;
 type AnalysisListener = (data: AnalysisData) => void;
 type BestMoveListener = (data: BestMoveData) => void;
 
-// Obsługa błędu linkowania
+// Default configuration
+const DEFAULT_CONFIG: StockfishConfig = {
+  throttling: {
+    analysisInterval: 100,   // Default: 100ms between analysis events
+    messageInterval: 100,    // Default: 100ms between message events
+  },
+  events: {
+    emitMessage: true,
+    emitAnalysis: true,
+    emitBestMove: true,
+  }
+};
+
+// Linking error handling
 const LINKING_ERROR =
   `The package 'dawikk-stock' doesn't seem to be linked. Make sure: \n\n` +
   Platform.select({ ios: "- You have run 'pod install'\n", default: '' }) +
   '- You rebuilt the app after installing the package\n' +
   '- You are not using Expo Go\n';
 
-// Pobranie modułu natywnego - poprawiona nazwa pakietu
+// Get the native module
 const StockfishModule = NativeModules.RNStockfishModule
   ? NativeModules.RNStockfishModule
   : new Proxy(
@@ -53,11 +81,11 @@ const StockfishModule = NativeModules.RNStockfishModule
       }
     );
 
-// Utworzenie emitera zdarzeń
+// Create event emitter
 export const StockfishEventEmitter = new NativeEventEmitter(StockfishModule);
 
 class Stockfish {
-  // Właściwości klasy
+  // Class properties
   engineInitialized: boolean;
   private listeners: MessageListener[];
   private analysisListeners: AnalysisListener[];
@@ -65,13 +93,34 @@ class Stockfish {
   private outputSubscription: any;
   private analysisSubscription: any;
   
-  constructor() {
+  // Throttling properties
+  private config: StockfishConfig;
+  private messageBuffer: string[] = [];
+  private analysisBuffer: Map<number, AnalysisData> = new Map(); // MultiPV handling with Map
+  private lastBestMove: BestMoveData | null = null;
+  private messageThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+  private analysisThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+  
+  constructor(config?: Partial<StockfishConfig>) {
     this.engineInitialized = false;
     this.listeners = [];
     this.analysisListeners = [];
     this.bestMoveListeners = [];
     
-    // Powiązanie metod
+    // Merge provided config with defaults
+    this.config = {
+      ...DEFAULT_CONFIG,
+      throttling: {
+        ...DEFAULT_CONFIG.throttling,
+        ...(config?.throttling || {})
+      },
+      events: {
+        ...DEFAULT_CONFIG.events,
+        ...(config?.events || {})
+      }
+    };
+    
+    // Bind methods
     this.init = this.init.bind(this);
     this.sendCommand = this.sendCommand.bind(this);
     this.shutdown = this.shutdown.bind(this);
@@ -83,8 +132,11 @@ class Stockfish {
     this.removeBestMoveListener = this.removeBestMoveListener.bind(this);
     this.handleOutput = this.handleOutput.bind(this);
     this.handleAnalysisOutput = this.handleAnalysisOutput.bind(this);
+    this.emitThrottledMessages = this.emitThrottledMessages.bind(this);
+    this.emitThrottledAnalysis = this.emitThrottledAnalysis.bind(this);
+    this.setConfig = this.setConfig.bind(this);
     
-    // Konfiguracja subskrypcji zdarzeń
+    // Set up event subscriptions
     this.outputSubscription = StockfishEventEmitter.addListener(
       'stockfish-output',
       this.handleOutput
@@ -97,8 +149,26 @@ class Stockfish {
   }
   
   /**
-   * Inicjalizuje silnik Stockfish.
-   * @returns Promise rozwiązywany jako true jeśli inicjalizacja powiodła się.
+   * Updates the Stockfish configuration.
+   * @param config Partial configuration to update
+   */
+  setConfig(config: Partial<StockfishConfig>): void {
+    this.config = {
+      ...this.config,
+      throttling: {
+        ...this.config.throttling,
+        ...(config.throttling || {})
+      },
+      events: {
+        ...this.config.events,
+        ...(config.events || {})
+      }
+    };
+  }
+  
+  /**
+   * Initializes the Stockfish engine.
+   * @returns Promise resolved as true if initialization succeeded.
    */
   async init(): Promise<boolean> {
     if (this.engineInitialized) {
@@ -116,9 +186,9 @@ class Stockfish {
   }
   
   /**
-   * Wysyła komendę UCI do silnika Stockfish.
-   * @param command Komenda UCI do wysłania.
-   * @returns Promise rozwiązywany jako true jeśli komenda została wysłana.
+   * Sends a UCI command to the Stockfish engine.
+   * @param command UCI command to send.
+   * @returns Promise resolved as true if the command was sent.
    */
   async sendCommand(command: string): Promise<boolean> {
     if (!this.engineInitialized) {
@@ -134,12 +204,23 @@ class Stockfish {
   }
   
   /**
-   * Zamyka silnik Stockfish.
-   * @returns Promise rozwiązywany jako true jeśli zamknięcie powiodło się.
+   * Shuts down the Stockfish engine.
+   * @returns Promise resolved as true if shutdown succeeded.
    */
   async shutdown(): Promise<boolean> {
     if (!this.engineInitialized) {
       return true;
+    }
+    
+    // Clear any pending throttle timers
+    if (this.messageThrottleTimer) {
+      clearTimeout(this.messageThrottleTimer);
+      this.messageThrottleTimer = null;
+    }
+    
+    if (this.analysisThrottleTimer) {
+      clearTimeout(this.analysisThrottleTimer);
+      this.analysisThrottleTimer = null;
     }
     
     try {
@@ -153,32 +234,144 @@ class Stockfish {
   }
   
   /**
-   * Obsługuje wiadomości wyjściowe z silnika.
-   * @param message Wiadomość z silnika Stockfish.
+   * Emits throttled message events based on configuration.
    */
-  handleOutput(message: string): void {
-    this.listeners.forEach(listener => listener(message));
+  private emitThrottledMessages(): void {
+    if (this.messageBuffer.length === 0 || !this.config.events.emitMessage) {
+      this.messageThrottleTimer = null;
+      return;
+    }
+    
+    // Only emit the latest message (or all if needed)
+    const latestMessage = this.messageBuffer[this.messageBuffer.length - 1];
+    this.listeners.forEach(listener => listener(latestMessage));
+    
+    // Clear buffer after emitting
+    this.messageBuffer = [];
+    
+    // Schedule next emission if needed
+    this.messageThrottleTimer = setTimeout(
+      this.emitThrottledMessages,
+      this.config.throttling.messageInterval
+    );
   }
   
   /**
-   * Obsługuje przeanalizowane dane wyjściowe z silnika.
-   * @param data Przeanalizowane dane z silnika Stockfish.
+   * Emits throttled analysis events based on configuration.
+   * Handles MultiPV by emitting latest result for each PV.
    */
-  handleAnalysisOutput(data: AnalysisData | BestMoveData): void {
-    // Wysyłamy dane do wszystkich słuchaczy analizy
-    this.analysisListeners.forEach(listener => listener(data as AnalysisData));
+  private emitThrottledAnalysis(): void {
+    if (this.analysisBuffer.size === 0 || 
+        (!this.config.events.emitAnalysis && !this.config.events.emitBestMove)) {
+      this.analysisThrottleTimer = null;
+      return;
+    }
     
-    // Dodatkowo wysyłamy zdarzenia bestmove do dedykowanych słuchaczy
-    if (data.type === 'bestmove') {
-      this.bestMoveListeners.forEach(listener => 
-        listener(data as BestMoveData));
+    // For analysis data, we want to emit all MultiPV values we've collected
+    if (this.config.events.emitAnalysis) {
+      const analysisData: AnalysisData = {
+        type: 'info',
+        bestMoves: [],
+        evaluations: [],
+        lines: [],
+        depths: []
+      };
+      
+      // Convert MultiPV Map to arrays in the analysis data
+      this.analysisBuffer.forEach((data, pvNumber) => {
+        if (data.bestMove) analysisData.bestMoves?.push(data.bestMove);
+        if (data.score !== undefined) analysisData.evaluations?.push(data.score.toString());
+        if (data.mate !== undefined) analysisData.evaluations?.push(`mate ${data.mate}`);
+        if (data.line) analysisData.lines?.push(data.line);
+        if (data.depth) analysisData.depths?.push(data.depth);
+        
+        // For single PV, also include individual fields
+        if (this.analysisBuffer.size === 1) {
+          analysisData.bestMove = data.bestMove;
+          analysisData.score = data.score;
+          analysisData.mate = data.mate;
+          analysisData.line = data.line;
+          analysisData.depth = data.depth;
+        }
+      });
+      
+      // Emit consolidated analysis data
+      this.analysisListeners.forEach(listener => listener(analysisData));
+    }
+    
+    // Clear analysis buffer after emitting
+    this.analysisBuffer.clear();
+    
+    // Schedule next emission if needed
+    this.analysisThrottleTimer = setTimeout(
+      this.emitThrottledAnalysis,
+      this.config.throttling.analysisInterval
+    );
+  }
+  
+  /**
+   * Handles output messages from the engine.
+   * @param message Message from the Stockfish engine.
+   */
+  handleOutput(message: string): void {
+    if (!this.config.events.emitMessage) return;
+    
+    // Add message to buffer
+    this.messageBuffer.push(message);
+    
+    // Start throttle timer if not running
+    if (this.messageThrottleTimer === null) {
+      this.messageThrottleTimer = setTimeout(
+        this.emitThrottledMessages,
+        this.config.throttling.messageInterval
+      );
     }
   }
   
   /**
-   * Dodaje nasłuchiwacz wiadomości.
-   * @param listener Funkcja do wywołania dla każdej wiadomości.
-   * @returns Funkcja usuwająca nasłuchiwacz.
+   * Handles analyzed output data from the engine.
+   * @param data Analyzed data from the Stockfish engine.
+   */
+  handleAnalysisOutput(data: AnalysisData | BestMoveData): void {
+    if (data.type === 'bestmove') {
+      // Store latest bestmove
+      this.lastBestMove = data as BestMoveData;
+      
+      // Immediately emit bestMove events if configured
+      if (this.config.events.emitBestMove) {
+        this.bestMoveListeners.forEach(listener => 
+          listener(data as BestMoveData));
+      }
+      
+      // Clear analysis buffer when bestmove arrives
+      this.analysisBuffer.clear();
+      
+      // Cancel any pending analysis emissions
+      if (this.analysisThrottleTimer) {
+        clearTimeout(this.analysisThrottleTimer);
+        this.analysisThrottleTimer = null;
+      }
+    } else if (data.type === 'info') {
+      // Extract multipv number (default to 1 if not present)
+      const multiPv = (data as any).multipv || 1;
+      
+      // Update analysis buffer with latest data for this PV
+      this.analysisBuffer.set(multiPv, data as AnalysisData);
+      
+      // Start throttle timer if not running
+      if (this.analysisThrottleTimer === null) {
+        this.analysisThrottleTimer = setTimeout(
+          this.emitThrottledAnalysis,
+          this.config.throttling.analysisInterval
+        );
+      }
+    }
+  }
+  
+  /**
+   * Adds a message listener.
+   * @param listener Function to call for each message.
+   * @returns Function to remove the listener.
    */
   addMessageListener(listener: MessageListener): () => void {
     this.listeners.push(listener);
@@ -186,9 +379,9 @@ class Stockfish {
   }
   
   /**
-   * Dodaje nasłuchiwacz analizy.
-   * @param listener Funkcja do wywołania dla każdego rezultatu analizy.
-   * @returns Funkcja usuwająca nasłuchiwacz.
+   * Adds an analysis listener.
+   * @param listener Function to call for each analysis result.
+   * @returns Function to remove the listener.
    */
   addAnalysisListener(listener: AnalysisListener): () => void {
     this.analysisListeners.push(listener);
@@ -196,9 +389,9 @@ class Stockfish {
   }
   
   /**
-   * Dodaje nasłuchiwacz ruchów komputera.
-   * @param listener Funkcja do wywołania dla każdego ruchu komputera.
-   * @returns Funkcja usuwająca nasłuchiwacz.
+   * Adds a bestmove listener.
+   * @param listener Function to call for each bestmove.
+   * @returns Function to remove the listener.
    */
   addBestMoveListener(listener: BestMoveListener): () => void {
     this.bestMoveListeners.push(listener);
@@ -206,8 +399,8 @@ class Stockfish {
   }
   
   /**
-   * Usuwa nasłuchiwacz wiadomości.
-   * @param listener Nasłuchiwacz do usunięcia.
+   * Removes a message listener.
+   * @param listener Listener to remove.
    */
   removeMessageListener(listener: MessageListener): void {
     const index = this.listeners.indexOf(listener);
@@ -217,8 +410,8 @@ class Stockfish {
   }
   
   /**
-   * Usuwa nasłuchiwacz analizy.
-   * @param listener Nasłuchiwacz do usunięcia.
+   * Removes an analysis listener.
+   * @param listener Listener to remove.
    */
   removeAnalysisListener(listener: AnalysisListener): void {
     const index = this.analysisListeners.indexOf(listener);
@@ -228,8 +421,8 @@ class Stockfish {
   }
   
   /**
-   * Usuwa nasłuchiwacz ruchów komputera.
-   * @param listener Nasłuchiwacz do usunięcia.
+   * Removes a bestmove listener.
+   * @param listener Listener to remove.
    */
   removeBestMoveListener(listener: BestMoveListener): void {
     const index = this.bestMoveListeners.indexOf(listener);
@@ -239,9 +432,9 @@ class Stockfish {
   }
   
   /**
-   * Metoda pomocnicza do ustawienia pozycji i rozpoczęcia analizy.
-   * @param fen Notacja FEN pozycji do analizy.
-   * @param options Opcje analizy.
+   * Helper method to set position and start analysis.
+   * @param fen FEN notation of position to analyze.
+   * @param options Analysis options.
    */
   async analyzePosition(fen: string, options: AnalysisOptions = {}): Promise<void> {
     const { 
@@ -264,17 +457,17 @@ class Stockfish {
   }
   
   /**
-   * Metoda pomocnicza do zatrzymania trwającej analizy.
+   * Helper method to stop ongoing analysis.
    */
   async stopAnalysis(): Promise<void> {
     await this.sendCommand('stop');
   }
   
   /**
-   * Metoda pomocnicza do uzyskania ruchu komputera w grze.
-   * @param fen Notacja FEN aktualnej pozycji.
-   * @param movetime Czas w milisekundach na ruch (domyślnie 1000ms).
-   * @param depth Głębokość analizy (domyślnie 15).
+   * Helper method to get computer move in a game.
+   * @param fen FEN notation of current position.
+   * @param movetime Time in milliseconds for the move (default 1000ms).
+   * @param depth Analysis depth (default 15).
    */
   async getComputerMove(fen: string, movetime: number = 1000, depth: number = 15): Promise<void> {
     await this.sendCommand('uci');
@@ -284,9 +477,20 @@ class Stockfish {
   }
   
   /**
-   * Czyści zasoby po zakończeniu korzystania z biblioteki.
+   * Cleans up resources when done with the library.
    */
   destroy(): void {
+    // Clear any pending throttle timers
+    if (this.messageThrottleTimer) {
+      clearTimeout(this.messageThrottleTimer);
+      this.messageThrottleTimer = null;
+    }
+    
+    if (this.analysisThrottleTimer) {
+      clearTimeout(this.analysisThrottleTimer);
+      this.analysisThrottleTimer = null;
+    }
+    
     this.shutdown().catch(console.error);
     this.outputSubscription.remove();
     this.analysisSubscription.remove();
@@ -296,5 +500,8 @@ class Stockfish {
   }
 }
 
-// Eksportowanie pojedynczej instancji
+// Export a single instance, but allow custom configuration
 export default new Stockfish();
+
+// Also export the class for users who want to create custom instances
+export { Stockfish };
