@@ -79,10 +79,10 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
 
         try {
             // Copy NNUE files from assets to app's files directory
-            if (!NNUEHelper.copyNNUEFilesFromAssets(reactContext)) {
-                Log.w(TAG, "Failed to copy some NNUE files from assets");
-                // Continue anyway as the files might already exist
-            }
+            // if (!NNUEHelper.copyNNUEFilesFromAssets(reactContext)) {
+            //     Log.w(TAG, "Failed to copy some NNUE files from assets");
+            //     // Continue anyway as the files might already exist
+            // }
             
             // Initialize the Stockfish engine
             int result = nativeInit();
