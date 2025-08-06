@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 # Define specific flags for ARM architectures
 
 set (NNUE_SMALL_NAME nn-37f18f62d772.nnue)
-set (NNUE_BIG_NAME nn-1111cefa1111.nnue)
+set (NNUE_BIG_NAME nn-1c0000000000.nnue)
 file(COPY ../cpp/${NNUE_SMALL_NAME} DESTINATION ${CMAKE_BINARY_DIR})
 file(COPY ../cpp/${NNUE_BIG_NAME} DESTINATION ${CMAKE_BINARY_DIR})
 
