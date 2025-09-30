@@ -1,5 +1,5 @@
 {
-  "name": "dawikk-stock",
+  "name": "dawikk-stockfish",
   "version": "0.9.86",
   "description": "Library to run Stockfish Chess Engine on all mobile platforms",
   "main": "src/index.tsx",

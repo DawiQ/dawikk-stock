@@ -1,4 +1,4 @@
-# dawikk-stock
+# dawikk-stockfish
 
 A React Native library that integrates the powerful Stockfish chess engine for both iOS and Android platforms.
 
@@ -19,10 +19,10 @@ A React Native library that integrates the powerful Stockfish chess engine for b
 
 ```sh
 # Using npm
-npm install dawikk-stock --save
+npm install dawikk-stockfish --save
 
 # Or using Yarn
-yarn add dawikk-stock
+yarn add dawikk-stockfish
 ```
 
 ### iOS Setup
@@ -34,7 +34,7 @@ cd ios && pod install
 ## Basic Usage
 
 ```javascript
-import Stockfish from 'dawikk-stock';
+import Stockfish from 'dawikk-stockfish';
 
 // Configure the engine (optional)
 Stockfish.setConfig({
@@ -279,7 +279,7 @@ The throttling system ensures:
 ### Position Analysis with MultiPV
 
 ```javascript
-import Stockfish from 'dawikk-stock';
+import Stockfish from 'dawikk-stockfish';
 
 // Initialize the engine
 await Stockfish.init();
@@ -330,7 +330,7 @@ setTimeout(async () => {
 ### Playing Against the Computer (Optimized)
 
 ```javascript
-import Stockfish from 'dawikk-stock';
+import Stockfish from 'dawikk-stockfish';
 import { Chess } from 'chess.js'; // Assuming you use chess.js
 
 class ChessGame {
@@ -402,7 +402,7 @@ game.makeMove('e2', 'e4'); // Player makes first move
 For advanced use cases (like running multiple instances), you can create custom instances:
 
 ```javascript
-import { Stockfish } from 'dawikk-stock'; // Import the class instead of the default instance
+import { Stockfish } from 'dawikk-stockfish'; // Import the class instead of the default instance
 
 // Create separate instances with different configurations
 const analysisEngine = new Stockfish({
