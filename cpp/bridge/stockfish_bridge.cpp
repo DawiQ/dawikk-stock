@@ -9,6 +9,12 @@
 #include <algorithm>
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
+#include <limits.h>
+
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 // Definicje dla implementacji C++
 namespace {
@@ -31,7 +37,7 @@ namespace {
 // Forward declaration dla funkcji pomocniczych
 #ifdef NO_INCBIN
 extern "C" {
-    // Te zmienne będą normalne wykorzystywane przez Stockfish
+    // Te zmienne będą normalnie wykorzystywane przez Stockfish
     const unsigned char        gEvalFile[]        = {0};
     const unsigned char* const gEvalFileDefaultBig = gEvalFile;
     const unsigned char* const gEvalFileDefaultSmall = gEvalFile;
@@ -40,13 +46,13 @@ extern "C" {
 }
 #endif
 
-// Dołączenie nagłówków Stockfisha
-#include "../stockfish/bitboard.h"
-#include "../stockfish/misc.h"
-#include "../stockfish/position.h"
-#include "../stockfish/types.h"
-#include "../stockfish/uci.h"
-#include "../stockfish/tune.h"
+// Dołączenie nagłówków Stockfisha - używamy nazw bez ścieżki bo include_directories są ustawione
+#include "bitboard.h"
+#include "misc.h"
+#include "position.h"
+#include "types.h"
+#include "uci.h"
+#include "tune.h"
 
 // Implementacja funkcji pomocniczej do znajdowania plików NNUE
 std::string find_nnue_file(const std::string& filename) {
@@ -55,6 +61,37 @@ std::string find_nnue_file(const std::string& filename) {
     if (f) {
         fclose(f);
         return filename;
+    }
+    
+    #ifdef __APPLE__
+    // Spróbuj znaleźć w iOS/macOS bundle
+    CFBundleRef mainBundle = CFBundleGetMainBundle();
+    if (mainBundle) {
+        CFStringRef cfFilename = CFStringCreateWithCString(NULL, filename.c_str(), kCFStringEncodingUTF8);
+        CFURLRef resourceURL = CFBundleCopyResourceURL(mainBundle, cfFilename, NULL, NULL);
+        
+        if (resourceURL) {
+            char path[PATH_MAX];
+            if (CFURLGetFileSystemRepresentation(resourceURL, true, (UInt8*)path, PATH_MAX)) {
+                CFRelease(resourceURL);
+                CFRelease(cfFilename);
+                return std::string(path);
+            }
+            CFRelease(resourceURL);
+        }
+        CFRelease(cfFilename);
+    }
+    #endif
+    
+    // Spróbuj znaleźć w katalogu ustawionym przez środowisko (Android)
+    const char* filesDir = std::getenv("STOCKFISH_FILES_DIR");
+    if (filesDir) {
+        std::string path = std::string(filesDir) + "/" + filename;
+        f = fopen(path.c_str(), "rb");
+        if (f) {
+            fclose(f);
+            return path;
+        }
     }
     
     // Jeśli nie znaleziono, zwróć oryginalną nazwę
@@ -68,7 +105,7 @@ namespace Eval {
 namespace NNUE {
 // Te funkcje będą używane przez Stockfisha do ładowania plików NNUE
 std::string get_big_nnue_path() {
-    return find_nnue_file("nn-1111cefa1111.nnue");
+    return find_nnue_file("nn-1c0000000000.nnue");
 }
 
 std::string get_small_nnue_path() {
