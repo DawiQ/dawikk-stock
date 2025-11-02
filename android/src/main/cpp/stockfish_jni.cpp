@@ -2,6 +2,7 @@
 #include <jni.h>
 #include <string>
 #include <android/log.h>
+#include <cstdlib>
 
 // Include the C++ bridge header
 #include "stockfish_bridge.h"
@@ -10,8 +11,6 @@
 #define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "StockfishNative", __VA_ARGS__))
 
 extern "C" {
-
-// JNI method implementations
 
 JNIEXPORT jint JNICALL Java_com_dawikk_stockfish_RNStockfishModule_nativeInit(
         JNIEnv *env, jobject instance) {
@@ -56,7 +55,7 @@ JNIEXPORT jboolean JNICALL Java_com_dawikk_stockfish_RNStockfishModule_nativeSen
         return JNI_FALSE;
     }
     
-    bool success = stockfish_stdin_write(cmd);
+    int success = stockfish_stdin_write(cmd);
     env->ReleaseStringUTFChars(command, cmd);
     
     return success ? JNI_TRUE : JNI_FALSE;

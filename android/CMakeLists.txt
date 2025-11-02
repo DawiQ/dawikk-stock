@@ -14,16 +14,44 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 
-# Define specific flags for ARM architectures
+# Download NNUE files if they don't exist
 set(NNUE_SMALL_NAME nn-37f18f62d772.nnue)
 set(NNUE_BIG_NAME nn-1c0000000000.nnue)
-file(COPY ../cpp/${NNUE_SMALL_NAME} DESTINATION ${CMAKE_BINARY_DIR})
-file(COPY ../cpp/${NNUE_BIG_NAME} DESTINATION ${CMAKE_BINARY_DIR})
+set(NNUE_SMALL_URL "https://tests.stockfishchess.org/api/nn/${NNUE_SMALL_NAME}")
+set(NNUE_BIG_URL "https://tests.stockfishchess.org/api/nn/${NNUE_BIG_NAME}")
+
+# Download NNUE files
+if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_SMALL_NAME})
+    message(STATUS "Downloading ${NNUE_SMALL_NAME}...")
+    file(DOWNLOAD ${NNUE_SMALL_URL} ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_SMALL_NAME}
+         SHOW_PROGRESS
+         STATUS download_status)
+    list(GET download_status 0 status_code)
+    if(NOT status_code EQUAL 0)
+        message(FATAL_ERROR "Failed to download ${NNUE_SMALL_NAME}")
+    endif()
+endif()
+
+if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_BIG_NAME})
+    message(STATUS "Downloading ${NNUE_BIG_NAME}...")
+    file(DOWNLOAD ${NNUE_BIG_URL} ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_BIG_NAME}
+         SHOW_PROGRESS
+         STATUS download_status)
+    list(GET download_status 0 status_code)
+    if(NOT status_code EQUAL 0)
+        message(FATAL_ERROR "Failed to download ${NNUE_BIG_NAME}")
+    endif()
+endif()
+
+# Copy NNUE files to build directory
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_SMALL_NAME} DESTINATION ${CMAKE_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_BIG_NAME} DESTINATION ${CMAKE_BINARY_DIR})
 
 # Include directories
 include_directories(
     ${STOCKFISH_DIR}
     ${BRIDGE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
 )
 
 # Find all Stockfish source files
@@ -50,6 +78,14 @@ add_library(
     
     # Stockfish sources
     ${STOCKFISH_SOURCES}
+)
+
+# Add compile definitions
+target_compile_definitions(stockfish-lib PRIVATE
+    USE_PTHREADS
+    NDEBUG
+    IS_64BIT
+    NO_INCBIN
 )
 
 # Set 16KB page alignment for the library
