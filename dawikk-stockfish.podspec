@@ -30,9 +30,9 @@ Pod::Spec.new do |s|
   # Download NNUE files before build
   s.prepare_command = <<-CMD
     # Download to cpp directory if not exists
-    if [ ! -f cpp/nn-37f18f62d772.nnue ]; then
-      echo "Downloading nn-37f18f62d772.nnue..."
-      curl -L -o cpp/nn-37f18f62d772.nnue https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
+    if [ ! -f cpp/nn-baff1ede1f90.nnue ]; then
+      echo "Downloading nn-baff1ede1f90.nnue..."
+      curl -L -o cpp/nn-baff1ede1f90.nnue https://tests.stockfishchess.org/api/nn/nn-baff1ede1f90.nnue
     fi
     if [ ! -f cpp/nn-1111cefa1111.nnue ]; then
       echo "Downloading nn-1111cefa1111.nnue..."
@@ -42,11 +42,11 @@ Pod::Spec.new do |s|
     # INCBIN searches relative to source file location (cpp/stockfish/nnue/network.cpp)
     # So we need files in cpp/stockfish/nnue/
     mkdir -p cpp/stockfish/nnue
-    cp cpp/nn-37f18f62d772.nnue cpp/stockfish/nnue/nn-37f18f62d772.nnue 2>/dev/null || true
+    cp cpp/nn-baff1ede1f90.nnue cpp/stockfish/nnue/nn-baff1ede1f90.nnue 2>/dev/null || true
     cp cpp/nn-1111cefa1111.nnue cpp/stockfish/nnue/nn-1111cefa1111.nnue 2>/dev/null || true
     
     # Also in cpp/stockfish/ as backup
-    cp cpp/nn-37f18f62d772.nnue cpp/stockfish/nn-37f18f62d772.nnue 2>/dev/null || true
+    cp cpp/nn-baff1ede1f90.nnue cpp/stockfish/nn-baff1ede1f90.nnue 2>/dev/null || true
     cp cpp/nn-1111cefa1111.nnue cpp/stockfish/nn-1111cefa1111.nnue 2>/dev/null || true
   CMD
   
@@ -65,12 +65,12 @@ Pod::Spec.new do |s|
         mkdir -p "$NNUE_DEST1"
         mkdir -p "$NNUE_DEST2"
         
-        if [ -f "${NNUE_SOURCE}/nn-37f18f62d772.nnue" ]; then
-          cp -f "${NNUE_SOURCE}/nn-37f18f62d772.nnue" "${NNUE_DEST1}/"
-          cp -f "${NNUE_SOURCE}/nn-37f18f62d772.nnue" "${NNUE_DEST2}/"
-          echo "Copied nn-37f18f62d772.nnue"
+        if [ -f "${NNUE_SOURCE}/nn-baff1ede1f90.nnue" ]; then
+          cp -f "${NNUE_SOURCE}/nn-baff1ede1f90.nnue" "${NNUE_DEST1}/"
+          cp -f "${NNUE_SOURCE}/nn-baff1ede1f90.nnue" "${NNUE_DEST2}/"
+          echo "Copied nn-baff1ede1f90.nnue"
         else
-          echo "ERROR: nn-37f18f62d772.nnue not found!"
+          echo "ERROR: nn-baff1ede1f90.nnue not found!"
           exit 1
         fi
         
