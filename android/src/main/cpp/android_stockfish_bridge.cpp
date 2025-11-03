@@ -89,7 +89,7 @@ std::string get_big_nnue_path() {
 }
 
 std::string get_small_nnue_path() {
-    return find_nnue_file("nn-37f18f62d772.nnue");
+    return find_nnue_file("nn-baff1ede1f90.nnue");
 }
 }
 }

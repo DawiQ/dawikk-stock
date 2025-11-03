@@ -34,20 +34,20 @@ Pod::Spec.new do |s|
       echo "Downloading nn-37f18f62d772.nnue..."
       curl -L -o cpp/nn-37f18f62d772.nnue https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
     fi
-    if [ ! -f cpp/nn-1c0000000000.nnue ]; then
-      echo "Downloading nn-1c0000000000.nnue..."
-      curl -L -o cpp/nn-1c0000000000.nnue https://tests.stockfishchess.org/api/nn/nn-1c0000000000.nnue
+    if [ ! -f cpp/nn-1111cefa1111.nnue ]; then
+      echo "Downloading nn-1111cefa1111.nnue..."
+      curl -L -o cpp/nn-1111cefa1111.nnue https://tests.stockfishchess.org/api/nn/nn-1111cefa1111.nnue
     fi
     
     # INCBIN searches relative to source file location (cpp/stockfish/nnue/network.cpp)
     # So we need files in cpp/stockfish/nnue/
     mkdir -p cpp/stockfish/nnue
     cp cpp/nn-37f18f62d772.nnue cpp/stockfish/nnue/nn-37f18f62d772.nnue 2>/dev/null || true
-    cp cpp/nn-1c0000000000.nnue cpp/stockfish/nnue/nn-1c0000000000.nnue 2>/dev/null || true
+    cp cpp/nn-1111cefa1111.nnue cpp/stockfish/nnue/nn-1111cefa1111.nnue 2>/dev/null || true
     
     # Also in cpp/stockfish/ as backup
     cp cpp/nn-37f18f62d772.nnue cpp/stockfish/nn-37f18f62d772.nnue 2>/dev/null || true
-    cp cpp/nn-1c0000000000.nnue cpp/stockfish/nn-1c0000000000.nnue 2>/dev/null || true
+    cp cpp/nn-1111cefa1111.nnue cpp/stockfish/nn-1111cefa1111.nnue 2>/dev/null || true
   CMD
   
   # Add script phase to ensure NNUE files are in place before compilation
@@ -74,12 +74,12 @@ Pod::Spec.new do |s|
           exit 1
         fi
         
-        if [ -f "${NNUE_SOURCE}/nn-1c0000000000.nnue" ]; then
-          cp -f "${NNUE_SOURCE}/nn-1c0000000000.nnue" "${NNUE_DEST1}/"
-          cp -f "${NNUE_SOURCE}/nn-1c0000000000.nnue" "${NNUE_DEST2}/"
-          echo "Copied nn-1c0000000000.nnue"
+        if [ -f "${NNUE_SOURCE}/nn-1111cefa1111.nnue" ]; then
+          cp -f "${NNUE_SOURCE}/nn-1111cefa1111.nnue" "${NNUE_DEST1}/"
+          cp -f "${NNUE_SOURCE}/nn-1111cefa1111.nnue" "${NNUE_DEST2}/"
+          echo "Copied nn-1111cefa1111.nnue"
         else
-          echo "ERROR: nn-1c0000000000.nnue not found!"
+          echo "ERROR: nn-1111cefa1111.nnue not found!"
           exit 1
         fi
         

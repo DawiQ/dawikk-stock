@@ -15,8 +15,8 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 
 # Download NNUE files if they don't exist
-set(NNUE_SMALL_NAME nn-37f18f62d772.nnue)
-set(NNUE_BIG_NAME nn-1c0000000000.nnue)
+set(NNUE_SMALL_NAME nn-baff1ede1f90.nnue)
+set(NNUE_BIG_NAME nn-1111cefa1111.nnue)
 set(NNUE_SMALL_URL "https://tests.stockfishchess.org/api/nn/${NNUE_SMALL_NAME}")
 set(NNUE_BIG_URL "https://tests.stockfishchess.org/api/nn/${NNUE_BIG_NAME}")
 
