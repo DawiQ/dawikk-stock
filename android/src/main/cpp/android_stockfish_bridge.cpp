@@ -85,11 +85,11 @@ namespace Eval {
 namespace NNUE {
 // These functions will be used by Stockfish to load NNUE files
 std::string get_big_nnue_path() {
-    return find_nnue_file("nn-1111cefa1111.nnue");
+    return find_nnue_file("nn-c0ae49f08b40.nnue");
 }
 
 std::string get_small_nnue_path() {
-    return find_nnue_file("nn-baff1ede1f90.nnue");
+    return find_nnue_file("nn-37f18f62d772.nnue");
 }
 }
 }

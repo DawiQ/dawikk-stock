@@ -40,7 +40,7 @@ namespace Stockfish {
 namespace {
 
 // Version number or dev.
-constexpr std::string_view version = "17.1";
+constexpr std::string_view version = "dev";
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
@@ -237,6 +237,9 @@ std::string compiler_info() {
 
     compiler += "\nCompilation settings       : ";
     compiler += (Is64Bit ? "64bit" : "32bit");
+#if defined(USE_AVX512ICL)
+    compiler += " AVX512ICL";
+#endif
 #if defined(USE_VNNI)
     compiler += " VNNI";
 #endif
@@ -256,12 +259,12 @@ std::string compiler_info() {
 #if defined(USE_SSE2)
     compiler += " SSE2";
 #endif
-    compiler += (HasPopCnt ? " POPCNT" : "");
 #if defined(USE_NEON_DOTPROD)
     compiler += " NEON_DOTPROD";
 #elif defined(USE_NEON)
     compiler += " NEON";
 #endif
+    compiler += (HasPopCnt ? " POPCNT" : "");
 
 #if !defined(NDEBUG)
     compiler += " DEBUG";

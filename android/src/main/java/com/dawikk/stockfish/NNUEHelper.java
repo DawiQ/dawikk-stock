@@ -22,7 +22,7 @@ public class NNUEHelper {
     public static boolean copyNNUEFilesFromAssets(Context context) {
         try {
             AssetManager assetManager = context.getAssets();
-            String[] files = {"nn-1111cefa1111.nnue", "nn-baff1ede1f90.nnue"};
+            String[] files = {"nn-c0ae49f08b40.nnue", "nn-37f18f62d772.nnue"};
             
             for (String filename : files) {
                 InputStream in = null;
