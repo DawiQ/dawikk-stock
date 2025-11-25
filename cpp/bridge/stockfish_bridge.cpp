@@ -49,6 +49,7 @@ extern "C" {
 // Dołączenie nagłówków Stockfisha - używamy nazw bez ścieżki bo include_directories są ustawione
 #include "bitboard.h"
 #include "misc.h"
+#include "nnue/features/full_threats.h"
 #include "position.h"
 #include "types.h"
 #include "uci.h"
@@ -134,6 +135,7 @@ int stockfish_main(void) {
     // Initialize Stockfish components
     Stockfish::Bitboards::init();
     Stockfish::Position::init();
+    Stockfish::Eval::NNUE::Features::init_threat_offsets();
 
     // Start the UCI engine
     int argc = 1;
