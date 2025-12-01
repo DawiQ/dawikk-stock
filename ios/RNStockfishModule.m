@@ -255,4 +255,11 @@ RCT_EXPORT_METHOD(shutdownEngine:(RCTPromiseResolveBlock)resolve
     [super invalidate];
 }
 
+RCT_EXPORT_METHOD(isEngineAvailable:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+    // On iOS, the native library is always available (compiled statically)
+    resolve(@(YES));
+}
+
 @end
