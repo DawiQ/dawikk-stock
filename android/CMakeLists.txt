@@ -80,13 +80,26 @@ add_library(
     ${STOCKFISH_SOURCES}
 )
 
-# Add compile definitions
+# Add compile definitions based on architecture
 target_compile_definitions(stockfish-lib PRIVATE
     USE_PTHREADS
     NDEBUG
-    IS_64BIT
     NO_INCBIN
 )
+
+# Add IS_64BIT only for 64-bit architectures
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+    target_compile_definitions(stockfish-lib PRIVATE IS_64BIT)
+endif()
+
+# Add NEON support for ARM architectures
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=8)
+    target_compile_options(stockfish-lib PRIVATE -march=armv8-a)
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=7)
+    target_compile_options(stockfish-lib PRIVATE -march=armv7-a -mfpu=neon -mfloat-abi=softfp)
+endif()
 
 # Set 16KB page alignment for the library
 target_link_options(stockfish-lib PRIVATE 
