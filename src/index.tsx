@@ -167,6 +167,20 @@ class Stockfish {
   }
   
   /**
+   * Checks if the native Stockfish engine is available on this device.
+   * On iOS, always returns true. On Android, returns false if native library failed to load.
+   * @returns Promise resolved as true if engine is available.
+   */
+  async isEngineAvailable(): Promise<boolean> {
+    try {
+      return await StockfishModule.isEngineAvailable();
+    } catch (error) {
+      console.error('Failed to check engine availability:', error);
+      return false;
+    }
+  }
+
+  /**
    * Initializes the Stockfish engine.
    * @returns Promise resolved as true if initialization succeeded.
    */

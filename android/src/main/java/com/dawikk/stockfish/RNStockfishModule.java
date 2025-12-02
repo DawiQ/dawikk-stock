@@ -27,14 +27,25 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
     private static final String EVENT_STOCKFISH_ANALYZED_OUTPUT = "stockfish-analyzed-output";
 
     private final ReactApplicationContext reactContext;
-    private boolean engineRunning = false;
-    private boolean listenerRunning = false;
+    private volatile boolean engineRunning = false;
+    private volatile boolean listenerRunning = false;
     private Thread engineThread;
     private Thread listenerThread;
 
-    // Load native library
+    // Native library loading status
+    private static boolean nativeLibraryLoaded = false;
+    private static String nativeLibraryError = null;
+
+    // Load native library with graceful error handling
     static {
-        System.loadLibrary("stockfish-lib");
+        try {
+            System.loadLibrary("stockfish-lib");
+            nativeLibraryLoaded = true;
+        } catch (UnsatisfiedLinkError e) {
+            nativeLibraryLoaded = false;
+            nativeLibraryError = e.getMessage();
+            Log.e("RNStockfishModule", "Failed to load native library: " + e.getMessage());
+        }
     }
 
     // Native methods
@@ -72,18 +83,22 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void initEngine(Promise promise) {
+        // Check if native library was loaded successfully
+        if (!nativeLibraryLoaded) {
+            String errorMsg = "Stockfish engine is not available on this device";
+            if (nativeLibraryError != null) {
+                errorMsg += ": " + nativeLibraryError;
+            }
+            promise.reject("NATIVE_LIBRARY_ERROR", errorMsg);
+            return;
+        }
+
         if (engineRunning) {
             promise.resolve(true);
             return;
         }
 
         try {
-            // Copy NNUE files from assets to app's files directory
-            // if (!NNUEHelper.copyNNUEFilesFromAssets(reactContext)) {
-            //     Log.w(TAG, "Failed to copy some NNUE files from assets");
-            //     // Continue anyway as the files might already exist
-            // }
-            
             // Initialize the Stockfish engine
             int result = nativeInit();
             if (result != 0) {
@@ -132,6 +147,11 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void sendCommand(String command, Promise promise) {
+        if (!nativeLibraryLoaded) {
+            promise.reject("NATIVE_LIBRARY_ERROR", "Stockfish engine is not available on this device");
+            return;
+        }
+
         if (!engineRunning) {
             promise.reject("ENGINE_NOT_RUNNING", "Stockfish engine is not running");
             return;
@@ -158,24 +178,28 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
 
         try {
             // Send the quit command to Stockfish
-            nativeSendCommand("quit");
+            if (nativeLibraryLoaded) {
+                nativeSendCommand("quit");
+            }
 
             // Stop the listener thread
             listenerRunning = false;
             if (listenerThread != null) {
                 try {
-                    listenerThread.join(1000);
+                    listenerThread.join(3000);
                 } catch (InterruptedException e) {
                     Log.e(TAG, "Interrupted while waiting for listener thread to stop", e);
+                    listenerThread.interrupt();
                 }
             }
 
             // Wait for engine thread to finish
             if (engineThread != null) {
                 try {
-                    engineThread.join(1000);
+                    engineThread.join(3000);
                 } catch (InterruptedException e) {
                     Log.e(TAG, "Interrupted while waiting for engine thread to stop", e);
+                    engineThread.interrupt();
                 }
             }
 
@@ -288,24 +312,28 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
         if (engineRunning) {
             try {
                 // Send the quit command to Stockfish
-                nativeSendCommand("quit");
+                if (nativeLibraryLoaded) {
+                    nativeSendCommand("quit");
+                }
 
                 // Stop the listener thread
                 listenerRunning = false;
                 if (listenerThread != null) {
                     try {
-                        listenerThread.join(1000);
+                        listenerThread.join(3000);
                     } catch (InterruptedException e) {
                         Log.e(TAG, "Interrupted while waiting for listener thread to stop", e);
+                        listenerThread.interrupt();
                     }
                 }
 
                 // Wait for engine thread to finish
                 if (engineThread != null) {
                     try {
-                        engineThread.join(1000);
+                        engineThread.join(3000);
                     } catch (InterruptedException e) {
                         Log.e(TAG, "Interrupted while waiting for engine thread to stop", e);
+                        engineThread.interrupt();
                     }
                 }
 
@@ -315,5 +343,11 @@ public class RNStockfishModule extends ReactContextBaseJavaModule {
             }
         }
         super.invalidate();
+    }
+
+    // Method to check if native library is available (can be called from JS)
+    @ReactMethod
+    public void isEngineAvailable(Promise promise) {
+        promise.resolve(nativeLibraryLoaded);
     }
 }
