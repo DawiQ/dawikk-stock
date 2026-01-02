@@ -83,6 +83,7 @@ target_compile_definitions(stockfish-lib PRIVATE
     USE_PTHREADS
     NDEBUG
     NO_INCBIN
+    NNUE_EMBEDDING_OFF
 )
 
 # Add IS_64BIT only for 64-bit architectures
