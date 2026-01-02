@@ -10,9 +10,7 @@ set(BRIDGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/bridge)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_STANDARD 17)
 
-# Add 16KB page size support flags
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+# Note: 16KB page size flags are set per-architecture below (only for ARM)
 
 # Download NNUE files if they don't exist
 set(NNUE_SMALL_NAME nn-37f18f62d772.nnue)
@@ -111,10 +109,13 @@ elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
     target_compile_options(stockfish-lib PRIVATE -msse2)
 endif()
 
-# Set 16KB page alignment for the library
-target_link_options(stockfish-lib PRIVATE 
-    "-Wl,-z,max-page-size=16384"
-)
+# Set 16KB page alignment only for ARM architectures (required for Android 15+)
+# x86/x86_64 emulators may not support 16KB pages properly
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    target_link_options(stockfish-lib PRIVATE
+        "-Wl,-z,max-page-size=16384"
+    )
+endif()
 
 # Link against required libraries
 target_link_libraries(
