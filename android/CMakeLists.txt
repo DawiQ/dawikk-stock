@@ -99,6 +99,13 @@ if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
 elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
     target_compile_definitions(stockfish-lib PRIVATE USE_NEON=7)
     target_compile_options(stockfish-lib PRIVATE -march=armv7-a -mfpu=neon -mfloat-abi=softfp)
+# Add SSE support for x86 architectures (emulators)
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+    target_compile_definitions(stockfish-lib PRIVATE USE_SSE2 USE_SSE41 USE_SSSE3)
+    target_compile_options(stockfish-lib PRIVATE -msse -msse2 -msse3 -mssse3 -msse4.1)
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
+    target_compile_definitions(stockfish-lib PRIVATE USE_SSE2)
+    target_compile_options(stockfish-lib PRIVATE -msse -msse2)
 endif()
 
 # Set 16KB page alignment for the library
