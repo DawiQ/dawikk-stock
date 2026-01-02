@@ -92,13 +92,23 @@ if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUA
     target_compile_definitions(stockfish-lib PRIVATE IS_64BIT)
 endif()
 
-# Add NEON support for ARM architectures
+# Add SIMD support for each architecture
 if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    # ARM64: Use NEON level 8 with ARMv8-A
     target_compile_definitions(stockfish-lib PRIVATE USE_NEON=8)
     target_compile_options(stockfish-lib PRIVATE -march=armv8-a)
 elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    # ARM32: Use NEON level 7 with ARMv7-A
     target_compile_definitions(stockfish-lib PRIVATE USE_NEON=7)
     target_compile_options(stockfish-lib PRIVATE -march=armv7-a -mfpu=neon -mfloat-abi=softfp)
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+    # x86_64: Use SSE4.1 and SSSE3 (supported by all x86_64 Android emulators)
+    target_compile_definitions(stockfish-lib PRIVATE USE_SSE41 USE_SSE2 USE_SSSE3)
+    target_compile_options(stockfish-lib PRIVATE -msse4.1 -mssse3)
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
+    # x86: Use SSE2 only (basic SIMD supported by all x86 processors)
+    target_compile_definitions(stockfish-lib PRIVATE USE_SSE2)
+    target_compile_options(stockfish-lib PRIVATE -msse2)
 endif()
 
 # Set 16KB page alignment for the library
