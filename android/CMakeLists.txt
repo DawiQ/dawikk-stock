@@ -86,36 +86,20 @@ target_compile_definitions(stockfish-lib PRIVATE
     NNUE_EMBEDDING_OFF
 )
 
-# Add IS_64BIT only for 64-bit architectures
-if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
-    target_compile_definitions(stockfish-lib PRIVATE IS_64BIT)
-endif()
+# All supported architectures are 64-bit
+target_compile_definitions(stockfish-lib PRIVATE IS_64BIT)
 
-# Add SIMD support for each architecture
+# Add SIMD support for each architecture (only 64-bit supported)
 if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
     # ARM64: Use NEON level 8 with ARMv8-A
     target_compile_definitions(stockfish-lib PRIVATE USE_NEON=8)
     target_compile_options(stockfish-lib PRIVATE -march=armv8-a)
-elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
-    # ARM32: Use NEON level 7 with ARMv7-A
-    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=7)
-    target_compile_options(stockfish-lib PRIVATE -march=armv7-a -mfpu=neon -mfloat-abi=softfp)
+    # Set 16KB page alignment for ARM64 (required for Android 15+)
+    target_link_options(stockfish-lib PRIVATE "-Wl,-z,max-page-size=16384")
 elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
     # x86_64: Use SSE4.1 and SSSE3 (supported by all x86_64 Android emulators)
     target_compile_definitions(stockfish-lib PRIVATE USE_SSE41 USE_SSE2 USE_SSSE3)
     target_compile_options(stockfish-lib PRIVATE -msse4.1 -mssse3)
-elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
-    # x86: Use SSE2 only (basic SIMD supported by all x86 processors)
-    target_compile_definitions(stockfish-lib PRIVATE USE_SSE2)
-    target_compile_options(stockfish-lib PRIVATE -msse2)
-endif()
-
-# Set 16KB page alignment only for ARM architectures (required for Android 15+)
-# x86/x86_64 emulators may not support 16KB pages properly
-if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
-    target_link_options(stockfish-lib PRIVATE
-        "-Wl,-z,max-page-size=16384"
-    )
 endif()
 
 # Link against required libraries
