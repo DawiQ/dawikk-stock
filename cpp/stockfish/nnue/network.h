@@ -134,6 +134,9 @@ struct Networks {
         big(std::move(*nB)),
         small(std::move(*nS)) {}
 
+    // Note: For SMALL_NET_ONLY (32-bit), NetworkBig == NetworkSmall (same type/dimensions)
+    // because TransformedFeatureDimensionsBig == TransformedFeatureDimensionsSmall
+    // This saves ~90MB RAM by using the smaller network architecture for both
     NetworkBig   big;
     NetworkSmall small;
 };

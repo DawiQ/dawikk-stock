@@ -58,12 +58,18 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
 
     assert(!pos.checkers());
 
+#ifdef SMALL_NET_ONLY
+    // 32-bit mode: Always use small network to save memory
+    auto [psqt, positional] = networks.small.evaluate(pos, accumulators, caches.small);
+#else
     bool smallNet           = use_smallnet(pos);
     auto [psqt, positional] = smallNet ? networks.small.evaluate(pos, accumulators, caches.small)
                                        : networks.big.evaluate(pos, accumulators, caches.big);
+#endif
 
     Value nnue = (125 * psqt + 131 * positional) / 128;
 
+#ifndef SMALL_NET_ONLY
     // Re-evaluate the position when higher eval accuracy is worth the time spent
     if (smallNet && (std::abs(nnue) < 277))
     {
@@ -71,6 +77,7 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
         nnue                       = (125 * psqt + 131 * positional) / 128;
         smallNet                   = false;
     }
+#endif
 
     // Blend optimism and eval with nnue complexity
     int nnueComplexity = std::abs(psqt - positional);
@@ -107,7 +114,11 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks) {
 
     ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
+#ifdef SMALL_NET_ONLY
+    auto [psqt, positional] = networks.small.evaluate(pos, *accumulators, caches->small);
+#else
     auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches->big);
+#endif
     Value v                 = psqt + positional;
     v                       = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";

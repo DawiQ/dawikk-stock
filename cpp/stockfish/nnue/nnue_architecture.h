@@ -40,13 +40,20 @@ using ThreatFeatureSet = Features::FullThreats;
 using PSQFeatureSet    = Features::HalfKAv2_hm;
 
 // Number of input feature dimensions after conversion
-constexpr IndexType TransformedFeatureDimensionsBig = 1024;
-constexpr int       L2Big                           = 15;
-constexpr int       L3Big                           = 32;
-
 constexpr IndexType TransformedFeatureDimensionsSmall = 128;
 constexpr int       L2Small                           = 15;
 constexpr int       L3Small                           = 32;
+
+#ifdef SMALL_NET_ONLY
+// 32-bit mode: Use small network dimensions for both to save ~90MB RAM
+constexpr IndexType TransformedFeatureDimensionsBig = TransformedFeatureDimensionsSmall;
+constexpr int       L2Big                           = L2Small;
+constexpr int       L3Big                           = L3Small;
+#else
+constexpr IndexType TransformedFeatureDimensionsBig = 1024;
+constexpr int       L2Big                           = 15;
+constexpr int       L3Big                           = 32;
+#endif
 
 constexpr IndexType PSQTBuckets = 8;
 constexpr IndexType LayerStacks = 8;

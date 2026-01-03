@@ -124,7 +124,11 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
 
     // We estimate the value of each piece by doing a differential evaluation from
     // the current base eval, simulating the removal of the piece from its square.
+#ifdef SMALL_NET_ONLY
+    auto [psqt, positional] = networks.small.evaluate(pos, *accumulators, caches.small);
+#else
     auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches.big);
+#endif
     Value base              = psqt + positional;
     base                    = pos.side_to_move() == WHITE ? base : -base;
 
@@ -140,7 +144,11 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
                 pos.remove_piece(sq);
 
                 accumulators->reset();
+#ifdef SMALL_NET_ONLY
+                std::tie(psqt, positional) = networks.small.evaluate(pos, *accumulators, caches.small);
+#else
                 std::tie(psqt, positional) = networks.big.evaluate(pos, *accumulators, caches.big);
+#endif
                 Value eval                 = psqt + positional;
                 eval                       = pos.side_to_move() == WHITE ? eval : -eval;
                 v                          = base - eval;
@@ -157,7 +165,11 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
     ss << '\n';
 
     accumulators->reset();
+#ifdef SMALL_NET_ONLY
+    auto t = networks.small.trace_evaluate(pos, *accumulators, caches.small);
+#else
     auto t = networks.big.trace_evaluate(pos, *accumulators, caches.big);
+#endif
 
     ss << " NNUE network contributions "
        << (pos.side_to_move() == WHITE ? "(White to move)" : "(Black to move)") << std::endl

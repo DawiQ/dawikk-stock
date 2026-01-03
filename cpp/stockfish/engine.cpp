@@ -60,6 +60,7 @@ Engine::Engine(std::optional<std::string> path) :
     networks(
       numaContext,
       // Heap-allocate because sizeof(NN::Networks) is large
+      // Note: For SMALL_NET_ONLY (32-bit), NetworkBig == NetworkSmall and both use small NNUE file
       std::make_unique<NN::Networks>(
         std::make_unique<NN::NetworkBig>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
                                          NN::EmbeddedNNUEType::BIG),
@@ -133,11 +134,13 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("SyzygyProbeLimit", Option(7, 0, 7));
 
+#ifndef SMALL_NET_ONLY
     options.add(  //
       "EvalFile", Option(EvalFileDefaultNameBig, [this](const Option& o) {
           load_big_network(o);
           return std::nullopt;
       }));
+#endif
 
     options.add(  //
       "EvalFileSmall", Option(EvalFileDefaultNameSmall, [this](const Option& o) {
@@ -257,7 +260,9 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 // network related
 
 void Engine::verify_networks() const {
+#ifndef SMALL_NET_ONLY
     networks->big.verify(options["EvalFile"], onVerifyNetworks);
+#endif
     networks->small.verify(options["EvalFileSmall"], onVerifyNetworks);
 
     auto statuses = networks.get_status_and_errors();
@@ -293,19 +298,23 @@ void Engine::verify_networks() const {
 
 void Engine::load_networks() {
     networks.modify_and_replicate([this](NN::Networks& networks_) {
+#ifndef SMALL_NET_ONLY
         networks_.big.load(binaryDirectory, options["EvalFile"]);
+#endif
         networks_.small.load(binaryDirectory, options["EvalFileSmall"]);
     });
     threads.clear();
     threads.ensure_network_replicated();
 }
 
+#ifndef SMALL_NET_ONLY
 void Engine::load_big_network(const std::string& file) {
     networks.modify_and_replicate(
       [this, &file](NN::Networks& networks_) { networks_.big.load(binaryDirectory, file); });
     threads.clear();
     threads.ensure_network_replicated();
 }
+#endif
 
 void Engine::load_small_network(const std::string& file) {
     networks.modify_and_replicate(
@@ -316,7 +325,9 @@ void Engine::load_small_network(const std::string& file) {
 
 void Engine::save_network(const std::pair<std::optional<std::string>, std::string> files[2]) {
     networks.modify_and_replicate([&files](NN::Networks& networks_) {
+#ifndef SMALL_NET_ONLY
         networks_.big.save(files[0].first);
+#endif
         networks_.small.save(files[1].first);
     });
 }

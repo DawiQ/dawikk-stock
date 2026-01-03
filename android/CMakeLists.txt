@@ -86,20 +86,24 @@ target_compile_definitions(stockfish-lib PRIVATE
     NNUE_EMBEDDING_OFF
 )
 
-# All supported architectures are 64-bit
-target_compile_definitions(stockfish-lib PRIVATE IS_64BIT)
-
-# Add SIMD support for each architecture (only 64-bit supported)
+# Architecture-specific configuration
 if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
-    # ARM64: Use NEON level 8 with ARMv8-A
-    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=8)
+    # ARM64: Full NNUE support
+    target_compile_definitions(stockfish-lib PRIVATE IS_64BIT USE_NEON=8)
     target_compile_options(stockfish-lib PRIVATE -march=armv8-a)
-    # Set 16KB page alignment for ARM64 (required for Android 15+)
     target_link_options(stockfish-lib PRIVATE "-Wl,-z,max-page-size=16384")
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    # ARM32: Small NNUE only (saves ~90MB RAM)
+    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=7 SMALL_NET_ONLY)
+    target_compile_options(stockfish-lib PRIVATE -march=armv7-a -mfpu=neon -mfloat-abi=softfp)
 elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
-    # x86_64: Use SSE4.1 and SSSE3 (supported by all x86_64 Android emulators)
-    target_compile_definitions(stockfish-lib PRIVATE USE_SSE41 USE_SSE2 USE_SSSE3)
+    # x86_64: Full NNUE support
+    target_compile_definitions(stockfish-lib PRIVATE IS_64BIT USE_SSE41 USE_SSE2 USE_SSSE3)
     target_compile_options(stockfish-lib PRIVATE -msse4.1 -mssse3)
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
+    # x86: Small NNUE only (saves ~90MB RAM)
+    target_compile_definitions(stockfish-lib PRIVATE USE_SSE2 SMALL_NET_ONLY)
+    target_compile_options(stockfish-lib PRIVATE -msse2)
 endif()
 
 # Link against required libraries

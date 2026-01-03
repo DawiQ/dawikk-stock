@@ -30,15 +30,15 @@ android {
         externalNativeBuild {
             cmake {
               cppFlags "-O2 -frtti -fexceptions -Wall -fstack-protector-all -std=c++17 -DNO_INCBIN -DUSE_PTHREADS -DNDEBUG"
-              // Only 64-bit architectures - 32-bit has memory issues with large NNUE networks
-              abiFilters "arm64-v8a", "x86_64"
+              // All architectures supported (32-bit uses small NNUE network only)
+              abiFilters "arm64-v8a", "armeabi-v7a", "x86_64", "x86"
               arguments "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
             }
         }
 
         ndk {
-            // Only 64-bit architectures supported (Google requirement since 2021)
-            abiFilters 'arm64-v8a', 'x86_64'
+            // All architectures (32-bit uses reduced memory mode)
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'
         }
     }
     

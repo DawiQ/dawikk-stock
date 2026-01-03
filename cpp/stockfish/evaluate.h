@@ -33,8 +33,13 @@ namespace Eval {
 // for the build process (profile-build and fishtest) to work. Do not change the
 // name of the macro or the location where this macro is defined, as it is used
 // in the Makefile/Fishtest.
-#define EvalFileDefaultNameBig "nn-c0ae49f08b40.nnue"
 #define EvalFileDefaultNameSmall "nn-37f18f62d772.nnue"
+#ifdef SMALL_NET_ONLY
+// 32-bit mode: Use small network for both to save memory
+#define EvalFileDefaultNameBig EvalFileDefaultNameSmall
+#else
+#define EvalFileDefaultNameBig "nn-c0ae49f08b40.nnue"
+#endif
 
 namespace NNUE {
 struct Networks;
