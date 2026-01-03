@@ -284,10 +284,13 @@ template void AccumulatorStack::evaluate<TransformedFeatureDimensionsBig>(
   const Position&                                            pos,
   const FeatureTransformer<TransformedFeatureDimensionsBig>& featureTransformer,
   AccumulatorCaches::Cache<TransformedFeatureDimensionsBig>& cache) noexcept;
+#ifndef SMALL_NET_ONLY
+// For SMALL_NET_ONLY, Big == Small so only one instantiation needed
 template void AccumulatorStack::evaluate<TransformedFeatureDimensionsSmall>(
   const Position&                                              pos,
   const FeatureTransformer<TransformedFeatureDimensionsSmall>& featureTransformer,
   AccumulatorCaches::Cache<TransformedFeatureDimensionsSmall>& cache) noexcept;
+#endif
 
 
 namespace {

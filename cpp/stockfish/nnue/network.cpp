@@ -410,7 +410,10 @@ bool Network<Arch, Transformer>::write_parameters(std::ostream&      stream,
 template class Network<NetworkArchitecture<TransformedFeatureDimensionsBig, L2Big, L3Big>,
                        FeatureTransformer<TransformedFeatureDimensionsBig>>;
 
+#ifndef SMALL_NET_ONLY
+// For SMALL_NET_ONLY, Big == Small so only one instantiation needed
 template class Network<NetworkArchitecture<TransformedFeatureDimensionsSmall, L2Small, L3Small>,
                        FeatureTransformer<TransformedFeatureDimensionsSmall>>;
+#endif
 
 }  // namespace Stockfish::Eval::NNUE
