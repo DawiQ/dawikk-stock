@@ -1,114 +1,96 @@
-# android/CMakeLists.txt
-cmake_minimum_required(VERSION 3.22)
-project(dawikk-stockfish)
+cmake_minimum_required(VERSION 3.22.1)
+project(stockfish)
 
-# Set the path to Stockfish source files
-set(STOCKFISH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/stockfish)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(SF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/stockfish)
 set(BRIDGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/bridge)
 
-# Compiler flags for Stockfish
-set(CMAKE_VERBOSE_MAKEFILE ON)
-set(CMAKE_CXX_STANDARD 17)
+# Stockfish 19 sources (exclude main.cpp, which defines its own main()).
+#
+# The globs deliberately do NOT reach ${SF_DIR}/universal: that directory holds
+# the entry points and section-rewriting scripts for upstream's multi-arch
+# "universal binary", which dispatches on runtime CPU detection. We ship one .so
+# per ABI and let the packager pick, so those sources are not vendored at all.
+file(GLOB SF_SOURCES
+  "${SF_DIR}/*.cpp"
+  "${SF_DIR}/nnue/*.cpp"
+  "${SF_DIR}/nnue/features/*.cpp"
+  "${SF_DIR}/syzygy/*.cpp"
+)
+list(REMOVE_ITEM SF_SOURCES "${SF_DIR}/main.cpp")
 
-# Add 16KB page size support flags
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+add_library(stockfish SHARED
+  ${SF_SOURCES}
+  ${BRIDGE_DIR}/stockfish_bridge.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp/stockfish_jni.cpp
+)
 
-# Download NNUE files if they don't exist
-set(NNUE_SMALL_NAME nn-37f18f62d772.nnue)
-set(NNUE_BIG_NAME nn-c0ae49f08b40.nnue)
-set(NNUE_SMALL_URL "https://tests.stockfishchess.org/api/nn/${NNUE_SMALL_NAME}")
-set(NNUE_BIG_URL "https://tests.stockfishchess.org/api/nn/${NNUE_BIG_NAME}")
+target_include_directories(stockfish PRIVATE
+  ${SF_DIR}
+  ${BRIDGE_DIR}
+)
 
-# Download NNUE files
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_SMALL_NAME})
-    message(STATUS "Downloading ${NNUE_SMALL_NAME}...")
-    file(DOWNLOAD ${NNUE_SMALL_URL} ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_SMALL_NAME}
-         SHOW_PROGRESS
-         STATUS download_status)
-    list(GET download_status 0 status_code)
-    if(NOT status_code EQUAL 0)
-        message(FATAL_ERROR "Failed to download ${NNUE_SMALL_NAME}")
-    endif()
+# Support Android 16 KB memory page sizes (required by Google Play for apps
+# targeting Android 15+). Align the shared library's LOAD segments to 16 KB so
+# libstockfish.so loads on devices that use 16 KB pages. NDK r28+ does this by
+# default; the explicit linker flag keeps it correct on older NDKs too.
+target_link_options(stockfish PRIVATE "-Wl,-z,max-page-size=16384")
+
+# Common defines. NNUE_EMBEDDING_OFF keeps the .so small: the network is loaded
+# from the downloaded .nnue file via the EvalFile UCI option instead of being
+# embedded with incbin.
+#
+# STOCKFISH_EMBEDDED switches off the std::exit(1) that Stockfish 19 added to
+# UCIEngine::terminate_on_critical_error. Upstream runs as its own process, so
+# ending it on a malformed FEN or an illegal move costs nothing; here the engine
+# shares the app's process and that exit would take the app down with it. See
+# the LOCAL PATCH comments in cpp/stockfish/uci.{h,cpp}.
+#
+# USE_POPCNT is safe on every ABI here: outside MSVC it resolves to
+# __builtin_popcountll, which Clang implements on 32-bit ARM too. Upstream's own
+# armv7-neon target sets popcnt=yes for the same reason.
+target_compile_definitions(stockfish PRIVATE
+  NDEBUG
+  USE_PTHREADS
+  USE_POPCNT
+  NNUE_EMBEDDING_OFF
+  STOCKFISH_EMBEDDED
+)
+
+# Stockfish 19 builds its attack tables at compile time and blows past Clang's
+# default 1,048,576-step constexpr budget doing it. Upstream's own Makefile
+# passes exactly this for every clang target; without it the NDK build fails in
+# attacks.cpp with "constexpr evaluation hit maximum step limit".
+target_compile_options(stockfish PRIVATE -fconstexpr-steps=500000000)
+
+# IS_64BIT is 64-bit only. It selects the __int128 path in mul_hi64() and sets
+# Stockfish's Is64Bit constant; on a 32-bit ABI it would be a lie, and mul_hi64
+# already carries a correct 32-bit fallback.
+if(${ANDROID_ABI} STREQUAL "arm64-v8a" OR ${ANDROID_ABI} STREQUAL "x86_64")
+  target_compile_definitions(stockfish PRIVATE IS_64BIT)
 endif()
 
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_BIG_NAME})
-    message(STATUS "Downloading ${NNUE_BIG_NAME}...")
-    file(DOWNLOAD ${NNUE_BIG_URL} ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_BIG_NAME}
-         SHOW_PROGRESS
-         STATUS download_status)
-    list(GET download_status 0 status_code)
-    if(NOT status_code EQUAL 0)
-        message(FATAL_ERROR "Failed to download ${NNUE_BIG_NAME}")
-    endif()
+if(${ANDROID_ABI} STREQUAL "arm64-v8a")
+  # ARMv8 NEON SIMD. Dot-product is left off for broad device compatibility.
+  target_compile_definitions(stockfish PRIVATE USE_NEON=8 USE_PREFETCH)
+
+elseif(${ANDROID_ABI} STREQUAL "armeabi-v7a")
+  # Mirrors upstream's own `armv7-neon` target, which sets arm_version=7,
+  # bits=32, prefetch=yes, popcnt=yes and passes -DUSE_NEON=$(arm_version).
+  #
+  # The level matters: Stockfish keeps every ARMv8-only intrinsic behind
+  # `USE_NEON >= 8` (vaddvq, vmull_high, vpaddq) or USE_NEON_DOTPROD, and ships a
+  # 32-bit polyfill for vmovl_high_s8 under `#ifndef __aarch64__`. Declaring 8
+  # here would not build.
+  target_compile_definitions(stockfish PRIVATE USE_NEON=7 USE_PREFETCH)
+
+  # 32-bit ARM has no native 64-bit atomics, and Stockfish uses them for the
+  # transposition table. Upstream links libatomic on armv7 for exactly this.
+  target_link_libraries(stockfish atomic)
 endif()
+# x86_64 (emulator) builds with the scalar NNUE path; no SIMD defines required.
 
-# Copy NNUE files to build directory
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_SMALL_NAME} DESTINATION ${CMAKE_BINARY_DIR})
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/${NNUE_BIG_NAME} DESTINATION ${CMAKE_BINARY_DIR})
-
-# Include directories
-include_directories(
-    ${STOCKFISH_DIR}
-    ${BRIDGE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
-)
-
-# Find all Stockfish source files
-file(GLOB STOCKFISH_SOURCES 
-    ${STOCKFISH_DIR}/*.cpp
-    ${STOCKFISH_DIR}/nnue/*.cpp
-    ${STOCKFISH_DIR}/nnue/features/*.cpp
-    ${STOCKFISH_DIR}/syzygy/*.cpp
-)
-
-# Exclude main.cpp from Stockfish sources if it exists
-list(FILTER STOCKFISH_SOURCES EXCLUDE REGEX "main\\.cpp$")
-
-# Create a shared library
-add_library(
-    stockfish-lib
-    SHARED
-    
-    # JNI implementation
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp/stockfish_jni.cpp
-    
-    # Bridge implementation
-    ${BRIDGE_DIR}/stockfish_bridge.cpp
-    
-    # Stockfish sources
-    ${STOCKFISH_SOURCES}
-)
-
-# Add compile definitions based on architecture
-target_compile_definitions(stockfish-lib PRIVATE
-    USE_PTHREADS
-    NDEBUG
-    NO_INCBIN
-)
-
-# Add IS_64BIT only for 64-bit architectures
-if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
-    target_compile_definitions(stockfish-lib PRIVATE IS_64BIT)
-endif()
-
-# Add NEON support for ARM architectures
-if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
-    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=8)
-    target_compile_options(stockfish-lib PRIVATE -march=armv8-a)
-elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
-    target_compile_definitions(stockfish-lib PRIVATE USE_NEON=7)
-    target_compile_options(stockfish-lib PRIVATE -march=armv7-a -mfpu=neon -mfloat-abi=softfp)
-endif()
-
-# Set 16KB page alignment for the library
-target_link_options(stockfish-lib PRIVATE 
-    "-Wl,-z,max-page-size=16384"
-)
-
-# Link against required libraries
-target_link_libraries(
-    stockfish-lib
-    android
-    log
-)
+find_library(log-lib log)
+target_link_libraries(stockfish ${log-lib})

@@ -1,18 +1,30 @@
 {
   "name": "dawikk-stockfish",
-  "version": "0.9.87",
-  "description": "Library to run Stockfish Chess Engine on all mobile platforms",
+  "version": "1.0.0",
+  "description": "Stockfish 19 chess engine for React Native (iOS + Android), NNUE network downloaded after install",
   "main": "src/index.tsx",
   "types": "src/index.tsx",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "podspec": "./dawikk-stockfish.podspec",
+  "files": [
+    "src",
+    "android",
+    "ios",
+    "cpp",
+    "dawikk-stockfish.podspec",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "react-native",
     "stockfish",
+    "stockfish-19",
     "chess",
+    "chess-engine",
     "uci",
+    "nnue",
     "ios",
     "android"
   ],
@@ -21,7 +33,7 @@
     "url": "git+https://github.com/DawiQ/dawikk-stock"
   },
   "author": "Dawikk <dawikk.apps@gmail.com> (https://github.com/DawiQ)",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "bugs": {
     "url": "https://github.com/DawiQ/dawikk-stock/issues"
   },

@@ -1,533 +1,242 @@
 # dawikk-stockfish
 
-A React Native library that integrates the powerful Stockfish chess engine for both iOS and Android platforms.
+Stockfish **19** for React Native — iOS and Android, running in-process, driven over UCI.
+
+The engine is compiled from the Stockfish 19 sources vendored in `cpp/stockfish/`.
+The NNUE network is **not** bundled: it is ~94 MB, which would be most of the store
+download, so it is fetched on first use into a per-app directory that is kept out of
+device backups, verified by sha256, and handed to the engine through the `EvalFile`
+UCI option.
 
 ## Features
 
-- Full UCI (Universal Chess Interface) support
-- Native integration with Stockfish engine
-- Cross-platform support (iOS and Android)
-- Simple event-based API for communication with the engine
-- Bundled with the latest Stockfish engine (version 17)
-- Performance optimized for mobile devices
-- Configurable event throttling to prevent UI thread blocking
-- Selectable event emission to improve performance
-- MultiPV support for analyzing multiple lines simultaneously
-- Enhanced performance with latest analysis always available
+- Stockfish 19 (NNUE), full UCI support
+- iOS (arm64 device + simulator) and Android (`arm64-v8a`, `armeabi-v7a`, `x86_64`)
+- Resumable, checksum-verified post-install download of the NNUE network, with
+  weighted progress and a Wi-Fi-only default
+- Event-based API: raw messages, parsed analysis (MultiPV), bestmove, errors
+- Configurable throttling so engine output never floods the JS thread
+- The embedded build does not `exit()` on a bad command (see
+  [Stockfish 19 notes](#stockfish-19-notes))
 
 ## Installation
 
 ```sh
-# Using npm
-npm install dawikk-stockfish --save
-
-# Or using Yarn
+npm install dawikk-stockfish
+# or
 yarn add dawikk-stockfish
 ```
 
-### iOS Setup
+### iOS
 
 ```sh
 cd ios && pod install
 ```
 
-## Basic Usage
+Deployment target is iOS 15.1. The pod compiles the whole engine, so the first
+build is slow; later builds are cached.
+
+### Android
+
+Nothing to configure — the library ships its own `CMakeLists.txt` and builds
+`libstockfish.so` for the ABIs listed above. Requires NDK r23+ and
+`minSdkVersion` 29.
+
+This is not usable in Expo Go: it contains native code, so you need a development
+build (`expo prebuild` + `expo run:android` / `expo run:ios`) or a bare project.
+
+## Quick start
 
 ```javascript
-import Stockfish from 'dawikk-stockfish';
+import Stockfish, { NnueNetworks } from 'dawikk-stockfish';
 
-// Configure the engine (optional)
-Stockfish.setConfig({
-  throttling: {
-    analysisInterval: 200, // Emit analysis events every 200ms
-    messageInterval: 300   // Emit raw messages every 300ms
-  },
-  events: {
-    emitMessage: true,     // Enable/disable raw message events
-    emitAnalysis: true,    // Enable/disable analysis events
-    emitBestMove: true     // Enable/disable bestmove events
-  }
-});
+// 1. Is there a native engine for this device at all?
+if (!(await Stockfish.isEngineAvailable())) return;
 
-// Initialize the engine
+// 2. The NNUE network is downloaded after install — do this once.
+if (!(await Stockfish.areNetworksReady())) {
+  await Stockfish.ensureNetworks({
+    allowMetered: false,                 // Wi-Fi only (default)
+    onProgress: (p) => console.log(Math.round(p.totalProgress * 100) + '%'),
+  });
+}
+
+// 3. Start the engine and listen.
 await Stockfish.init();
 
-// Set up a listener for engine output
-const unsubscribeMessage = Stockfish.addMessageListener((message) => {
-  console.log('Engine message:', message);
+const off = Stockfish.addAnalysisListener((data) => {
+  console.log(data.depth, data.evaluations, data.bestMoves);
+});
+const offBest = Stockfish.addBestMoveListener((data) => {
+  console.log('bestmove', data.move);
 });
 
-// Send UCI commands
-await Stockfish.sendCommand('position startpos');
-await Stockfish.sendCommand('go depth 15');
+await Stockfish.analyzePosition(
+  'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+  { depth: 20, multiPv: 3 }
+);
 
-// Clean up when done
-unsubscribeMessage();
+// 4. Clean up.
+off();
+offBest();
 await Stockfish.shutdown();
 ```
 
-## API Reference
+## NNUE network
 
-### Methods
-
-#### `init()`
-Initializes the Stockfish engine.
+The network (`nn-1a298aa575a0.nnue`, 93.9 MiB) is downloaded on demand. Stockfish 19
+retired the small second network that 16.1 introduced, so there is one file now —
+the API still speaks in terms of a *list* of files, because resume, weighted
+progress and verification are all written against a set.
 
 ```javascript
-const success = await Stockfish.init();
+import { NnueNetworks } from 'dawikk-stockfish';
+
+NnueNetworks.name;              // "nn-1a298aa575a0.nnue"
+NnueNetworks.directory;         // absolute, excluded from backup
+NnueNetworks.approxTotalBytes;  // 98511183
+
+await NnueNetworks.getStatus(); // NnueStatus (per-file ready/bytes/partialBytes, freeBytes)
+await NnueNetworks.isReady();
+await NnueNetworks.download({ sources, allowMetered, onProgress });
+await NnueNetworks.cancel();    // partial .part file is kept and resumed later
+await NnueNetworks.remove();    // engine must be stopped first
+await NnueNetworks.verify();    // full sha256 re-check (~94 MB read, slow)
+
+const off = NnueNetworks.addProgressListener((p) => {/* NnueProgress */});
+const offReady = NnueNetworks.addReadyListener((s) => {/* NnueStatus */});
 ```
 
-#### `setConfig(config)`
-Configures the library's behavior regarding event throttling and emission. This method can be called at any time, even after initialization.
+`sources` is a list of URL prefixes tried in order; the filename is appended to
+each. It defaults to Stockfish's own sources:
+
+```
+https://tests.stockfishchess.org/api/nn/
+https://github.com/official-stockfish/networks/raw/master/
+```
+
+**Point this at your own CDN in production.** Every install pulling 94 MB from
+`tests.stockfishchess.org` is not a good neighbour, and a CDN gives you Range
+support and predictable throughput.
+
+`download()` rejects with one of: `NNUE_METERED_NETWORK`, `NNUE_NO_SPACE`,
+`NNUE_CHECKSUM_FAILED`, `NNUE_DOWNLOAD_FAILED`, `NNUE_CANCELLED`,
+`NNUE_DOWNLOAD_BUSY`.
+
+Networks retired in Stockfish 19 (`nn-c288c895ea92.nnue`, `nn-37f18f62d772.nnue`,
+113 MB together) are deleted on the first run after an upgrade, from both the
+current and the legacy storage location.
+
+## API
+
+### Engine
+
+| Method | Description |
+|---|---|
+| `isEngineAvailable()` | `false` when there is no native engine library for this device's ABI. The engine can never start there — hide analysis rather than suggest a reinstall. |
+| `areNetworksReady()` | Network present and verified. |
+| `ensureNetworks(options?)` | Downloads whatever is missing; concurrent callers share one transfer. |
+| `init()` | Starts the engine. Concurrent calls join the first one's promise. |
+| `sendCommand(command)` | Raw UCI command. Initializes the engine if needed. |
+| `shutdown()` | Stops the engine and frees resources. |
+| `analyzePosition(fen, options)` | `uci` → `isready` → `ucinewgame` → `position fen` → `go`. Options: `depth`, `multiPv`, `movetime`, `nodes`. |
+| `stopAnalysis()` | Sends `stop`. |
+| `getComputerMove(fen, movetime?, depth?)` | Convenience wrapper; the move arrives on the bestmove listener. |
+| `setConfig(config)` | Throttling and which events are emitted. Callable at any time. |
+| `destroy()` | Shuts down and drops every listener. |
+
+### Listeners
+
+Every `add*Listener` returns its own unsubscribe function.
+
+```javascript
+Stockfish.addMessageListener((message: string) => {});
+Stockfish.addAnalysisListener((data: AnalysisData) => {});
+Stockfish.addBestMoveListener((data: BestMoveData) => {});
+Stockfish.addErrorListener((error: StockfishError) => {});
+```
+
+`addErrorListener` replays the most recent error to a listener that subscribes
+after it fired, so a failure during `init()` is not lost to a late subscriber.
+
+Error codes:
+
+| Code | Meaning |
+|---|---|
+| `NNUE_MISSING` | Network not downloaded yet. Recoverable: `ensureNetworks()` then `init()`. |
+| `NNUE_LOAD_FAILED` | A file exists but the engine could not load it. |
+| `ENGINE_UNAVAILABLE` | No native library for this ABI. Not recoverable by the user. |
+| `ENGINE_CRITICAL_ERROR` | Stockfish rejected the last command (bad FEN, illegal move in `position ... moves`, bad `go` argument). The engine stays up, but that command produced nothing — no `bestmove` is coming for it. After a rejected `position` the engine is reset to the start position, so the next `go` needs a fresh `position` first. |
+
+### Configuration
 
 ```javascript
 Stockfish.setConfig({
   throttling: {
-    analysisInterval: 200,  // Time in ms between analysis events
-    messageInterval: 300    // Time in ms between message events
+    analysisInterval: 100,  // ms between analysis emissions
+    messageInterval: 100,   // ms between raw message emissions
   },
   events: {
-    emitMessage: true,      // Whether to emit raw message events
-    emitAnalysis: true,     // Whether to emit analysis events
-    emitBestMove: true      // Whether to emit bestMove events
-  }
-});
-```
-
-#### `sendCommand(command)`
-Sends a UCI command to the engine.
-
-```javascript
-await Stockfish.sendCommand('position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
-await Stockfish.sendCommand('go depth 20');
-```
-
-#### `shutdown()`
-Shuts down the engine and frees resources.
-
-```javascript
-await Stockfish.shutdown();
-```
-
-#### `addMessageListener(callback)`
-Adds a listener for raw output messages from the engine. Returns a function to remove the listener.
-
-```javascript
-const unsubscribe = Stockfish.addMessageListener((message) => {
-  console.log('Engine says:', message);
-});
-
-// Later, to remove the listener
-unsubscribe();
-```
-
-#### `addAnalysisListener(callback)`
-Adds a listener for parsed analysis data (structured data). Returns a function to remove the listener.
-
-```javascript
-const unsubscribe = Stockfish.addAnalysisListener((data) => {
-  console.log('Analysis data:', data);
-  
-  // For MultiPV analysis, you can access all lines through these arrays
-  if (data.bestMoves && data.bestMoves.length > 1) {
-    console.log('All best moves:', data.bestMoves);
-    console.log('All evaluations:', data.evaluations);
-    console.log('All lines:', data.lines);
-  }
-});
-
-// Later, to remove the listener
-unsubscribe();
-```
-
-#### `addBestMoveListener(callback)`
-Adds a dedicated listener for "bestmove" events (computer's chosen moves). Perfect for implementing a game against the computer. Returns a function to remove the listener.
-
-```javascript
-const unsubscribe = Stockfish.addBestMoveListener((data) => {
-  console.log('Computer chose move:', data.move);
-  // Make the move on your chess board
-});
-
-// Later, to remove the listener
-unsubscribe();
-```
-
-#### `analyzePosition(fen, options)`
-Helper method to set a position and start analysis.
-
-```javascript
-await Stockfish.analyzePosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', {
-  depth: 20,
-  multiPv: 3,
-  movetime: 5000
-});
-```
-
-#### `stopAnalysis()`
-Stops the current analysis.
-
-```javascript
-await Stockfish.stopAnalysis();
-```
-
-#### `getComputerMove(fen, movetime, depth)`
-Helper method to get a computer move in a game. Will trigger a `bestmove` event that can be captured with `addBestMoveListener`.
-
-```javascript
-// Computer has 1 second to choose a move
-await Stockfish.getComputerMove('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 1000, 15);
-```
-
-### Data Structures
-
-#### StockfishConfig
-```typescript
-interface StockfishConfig {
-  throttling: {
-    analysisInterval: number;  // Time in ms between analysis event emissions
-    messageInterval: number;   // Time in ms between message event emissions
-  };
-  events: {
-    emitMessage: boolean;      // Whether to emit raw message events
-    emitAnalysis: boolean;     // Whether to emit analysis events
-    emitBestMove: boolean;     // Whether to emit bestMove events
-  };
-}
-```
-
-#### AnalysisData
-```typescript
-interface AnalysisData {
-  type: 'info' | 'bestmove';
-  depth?: number;
-  score?: number;
-  mate?: number;
-  bestMove?: string;
-  line?: string;
-  move?: string;
-  
-  // For MultiPV analysis
-  bestMoves?: string[];        // Array of best moves for each line
-  evaluations?: string[];      // Array of evaluations for each line
-  lines?: string[];            // Array of move sequences for each line
-  depths?: number[];           // Array of depths for each line
-}
-```
-
-#### BestMoveData
-```typescript
-interface BestMoveData {
-  type: 'bestmove';
-  move: string;
-  ponder?: string;
-}
-```
-
-#### AnalysisOptions
-```typescript
-interface AnalysisOptions {
-  depth?: number;
-  multiPv?: number;
-  movetime?: number;
-  nodes?: number;
-}
-```
-
-## Events
-
-The library emits three types of events:
-
-1. **Raw Messages** - Plain text output from the Stockfish engine
-   - These include UCI protocol responses like `uciok`, `readyok`, and `bestmove e2e4`
-   - Access these via `addMessageListener`
-   - Can be disabled with `setConfig({events: {emitMessage: false}})`
-
-2. **Analysis Data** - Structured data parsed from engine output
-   - This data may include evaluation scores, depth, best moves, etc.
-   - Support for MultiPV (multiple lines) with arrays for bestMoves, evaluations, and lines
-   - Access this via `addAnalysisListener`
-   - Can be disabled with `setConfig({events: {emitAnalysis: false}})`
-
-3. **Computer Moves** - Dedicated events for computer moves
-   - Contains only the final move choice from the engine
-   - Access this via `addBestMoveListener`
-   - Can be disabled with `setConfig({events: {emitBestMove: false}})`
-
-## Throttling Configuration
-
-To prevent UI thread blocking with rapid engine updates:
-
-```javascript
-// Configure throttling
-Stockfish.setConfig({
-  throttling: {
-    analysisInterval: 200,  // Emit analysis updates every 200ms max
-    messageInterval: 300    // Emit raw message updates every 300ms max
-  }
-});
-```
-
-The throttling system ensures:
-- Events are buffered and emitted at regular intervals
-- Only the most recent data is emitted, preventing outdated analysis
-- For MultiPV analysis, all lines are collected and emitted together
-- UI remains responsive even during intensive analysis
-
-## Usage Examples
-
-### Position Analysis with MultiPV
-
-```javascript
-import Stockfish from 'dawikk-stockfish';
-
-// Initialize the engine
-await Stockfish.init();
-
-// Configure for performance
-Stockfish.setConfig({
-  throttling: {
-    analysisInterval: 200,
-    messageInterval: 300
-  },
-  events: {
-    emitMessage: false,  // Disable raw messages (not needed for analysis)
+    emitMessage: true,
     emitAnalysis: true,
-    emitBestMove: false  // Disable bestmove events (not needed for analysis)
-  }
+    emitBestMove: true,
+  },
 });
-
-// Set up analysis listener
-const unsubscribe = Stockfish.addAnalysisListener((data) => {
-  // For MultiPV analysis, we'll receive arrays of data
-  if (data.bestMoves && data.bestMoves.length > 0) {
-    console.log('Analysis depth:', Math.max(...data.depths));
-    
-    // Display each line
-    data.bestMoves.forEach((move, index) => {
-      console.log(`Line ${index + 1}:`);
-      console.log(`  Best move: ${move}`);
-      console.log(`  Evaluation: ${data.evaluations[index]}`);
-      console.log(`  Full line: ${data.lines[index]}`);
-    });
-  }
-});
-
-// Analyze a position with 3 lines
-await Stockfish.analyzePosition('r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3', {
-  depth: 18,
-  multiPv: 3
-});
-
-// Stop after 5 seconds
-setTimeout(async () => {
-  await Stockfish.stopAnalysis();
-  unsubscribe();
-  await Stockfish.shutdown();
-}, 5000);
 ```
 
-### Playing Against the Computer (Optimized)
+Turning off what you do not consume is the cheapest optimization here: for a game
+against the computer keep only `emitBestMove`; for analysis keep only
+`emitAnalysis`.
+
+### Multiple instances
 
 ```javascript
-import Stockfish from 'dawikk-stockfish';
-import { Chess } from 'chess.js'; // Assuming you use chess.js
+import { Stockfish } from 'dawikk-stockfish'; // the class, not the default instance
 
-class ChessGame {
-  constructor() {
-    this.game = new Chess();
-    this.initialize();
-  }
-
-  async initialize() {
-    // Configure the engine for optimal performance in a game
-    Stockfish.setConfig({
-      throttling: {
-        analysisInterval: 200,
-        messageInterval: 300
-      },
-      events: {
-        emitMessage: false,  // No need for raw messages
-        emitAnalysis: false, // No need for analysis data
-        emitBestMove: true   // Only need the final move
-      }
-    });
-    
-    // Initialize engine
-    await Stockfish.init();
-    
-    // Listen for computer moves
-    this.unsubscribe = Stockfish.addBestMoveListener((data) => {
-      // Execute computer's move
-      this.game.move({
-        from: data.move.substring(0, 2),
-        to: data.move.substring(2, 4),
-        promotion: data.move.length > 4 ? data.move[4] : undefined
-      });
-      
-      console.log('New position:', this.game.fen());
-      console.log('History:', this.game.history({ verbose: true }));
-    });
-  }
-
-  // Method to make player's move
-  makeMove(from, to, promotion) {
-    // Check if move is legal
-    const move = this.game.move({ from, to, promotion });
-    
-    if (move) {
-      // Ask computer to respond
-      Stockfish.getComputerMove(this.game.fen(), 1000, 15);
-      return true;
-    }
-    
-    return false;
-  }
-
-  // Clean up resources
-  cleanup() {
-    this.unsubscribe();
-    Stockfish.shutdown();
-  }
-}
-
-// Usage
-const game = new ChessGame();
-game.makeMove('e2', 'e4'); // Player makes first move
-// ... after receiving bestmove event, computer responds automatically
+const analysis = new Stockfish({ events: { emitMessage: false, emitAnalysis: true, emitBestMove: false } });
+const game     = new Stockfish({ events: { emitMessage: false, emitAnalysis: false, emitBestMove: true } });
 ```
 
-## Advanced: Creating Multiple Instances
+Both talk to the same native engine — instances differ in listeners and
+throttling, not in engine state.
 
-For advanced use cases (like running multiple instances), you can create custom instances:
+## Stockfish 19 notes
 
-```javascript
-import { Stockfish } from 'dawikk-stockfish'; // Import the class instead of the default instance
+The vendored tree in `cpp/stockfish/` is upstream `sf_19` with two deliberate,
+clearly marked local patches, both consequences of the engine sharing the app's
+process instead of running as its own:
 
-// Create separate instances with different configurations
-const analysisEngine = new Stockfish({
-  throttling: { analysisInterval: 100, messageInterval: 200 },
-  events: { emitMessage: false, emitAnalysis: true, emitBestMove: false }
-});
+1. **`uci.{h,cpp}` — `terminate_on_critical_error()` no longer calls `std::exit(1)`**
+   under `-DSTOCKFISH_EMBEDDED`. Upstream ends the process on a malformed FEN, an
+   illegal move in `position ... moves`, or a bad `go` argument; here that would
+   take the whole app down. The command is now reported and ignored, a rejected
+   `go` is dropped rather than continued with half-parsed limits, and a rejected
+   `position` resets the board to the start position (`Position::set()` clears
+   before it validates, so the rejected position was left half-built). The native
+   module also watches the output stream for `info string CRITICAL ERROR:` and
+   raises `ENGINE_CRITICAL_ERROR`.
+2. **`shm.h` — `USE_UNIX_SHM` is off on iOS.** It is enabled for `__APPLE__`
+   upstream, but the sandbox makes the `/tmp` `mkdir` fail on every start, and
+   cross-process shared memory buys a single-process embedded engine nothing.
 
-const gameEngine = new Stockfish({
-  throttling: { analysisInterval: 300, messageInterval: 400 },
-  events: { emitMessage: false, emitAnalysis: false, emitBestMove: true }
-});
+Other build details worth knowing if you fork this:
 
-// Initialize both engines
-await analysisEngine.init();
-await gameEngine.init();
-
-// Use them independently
-analysisEngine.addAnalysisListener(data => console.log('Analysis:', data));
-gameEngine.addBestMoveListener(data => console.log('Game move:', data.move));
-
-// Clean up when done
-analysisEngine.destroy();
-gameEngine.destroy();
-```
-
-## Important Notes
-
-### Engine Initialization Sequence
-
-For proper operation, follow this initialization sequence:
-
-1. Initialize the engine with `await Stockfish.init()`
-2. Set up your listeners
-3. Send the UCI command: `await Stockfish.sendCommand('uci')`
-4. Wait for the `uciok` response in your message listener
-5. Send the `isready` command: `await Stockfish.sendCommand('isready')`
-6. Wait for the `readyok` response in your message listener
-7. Now the engine is ready to accept further commands
-
-### Handling Engine Moves
-
-The Stockfish engine communicates moves in the UCI format (e.g., `e2e4`). To handle these:
-
-```javascript
-Stockfish.addBestMoveListener((data) => {
-  const moveStr = data.move;
-  // Parse UCI format to your chess representation
-  const from = moveStr.substring(0, 2);
-  const to = moveStr.substring(2, 4);
-  const promotion = moveStr.length > 4 ? moveStr[4] : undefined;
-  
-  // Now you can use these coordinates with a chess library like chess.js
-  chess.move({from, to, promotion});
-});
-```
-
-## Performance Optimization Tips
-
-1. **Disable Unnecessary Events**: Use `setConfig()` to disable events you don't need
-   ```javascript
-   // For computer game, disable analysis events
-   Stockfish.setConfig({
-     events: { emitMessage: false, emitAnalysis: false, emitBestMove: true }
-   });
-   
-   // For position analysis, disable bestmove events
-   Stockfish.setConfig({
-     events: { emitMessage: false, emitAnalysis: true, emitBestMove: false }
-   });
-   ```
-
-2. **Adjust Throttling**: Increase intervals for smoother UI, decrease for more responsive analysis
-   ```javascript
-   // More responsive analysis (updates more frequently)
-   Stockfish.setConfig({
-     throttling: { analysisInterval: 100, messageInterval: 150 }
-   });
-   
-   // Smoother UI (less frequent updates)
-   Stockfish.setConfig({
-     throttling: { analysisInterval: 300, messageInterval: 400 }
-   });
-   ```
-
-3. **Minimize Listeners**: Remove listeners when not needed
-   ```javascript
-   const unsubscribe = Stockfish.addAnalysisListener(data => {/*...*/});
-   
-   // When done with analysis
-   unsubscribe();
-   ```
-
-## Common UCI Commands
-
-Here are some common UCI commands you can send to the engine:
-
-```javascript
-// Set up the starting position
-await Stockfish.sendCommand('position startpos');
-
-// Set up a position from FEN
-await Stockfish.sendCommand('position fen r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3');
-
-// Set up a position and apply moves
-await Stockfish.sendCommand('position startpos moves e2e4 e7e5 g1f3');
-
-// Start analysis with depth limit
-await Stockfish.sendCommand('go depth 20');
-
-// Start analysis with time limit (milliseconds)
-await Stockfish.sendCommand('go movetime 3000');
-
-// Start analysis with multiple lines (MultiPV)
-await Stockfish.sendCommand('setoption name MultiPV value 3');
-await Stockfish.sendCommand('go depth 20');
-
-// Limit engine strength (0-20)
-await Stockfish.sendCommand('setoption name Skill Level value 10');
-
-// Stop the current calculation
-await Stockfish.sendCommand('stop');
-```
+- `-fconstexpr-steps=500000000` is **required** on Clang. Stockfish 19 builds its
+  attack tables at compile time and blows past the default step budget;
+  `attacks.cpp` fails without it. It is set in both `android/CMakeLists.txt` and
+  the podspec.
+- `NNUE_EMBEDDING_OFF` is what keeps the network out of the binary.
+- `cpp/stockfish/universal/` is intentionally not vendored (runtime CPU dispatch
+  binaries), and `main.cpp` is kept for fidelity with upstream but excluded from
+  the build.
+- `EvalFileSmall` no longer exists as a UCI option in Stockfish 19.
 
 ## License
 
-This project is licensed under the GPL-3.0 License, as it includes Stockfish code which is GPL-3.0 licensed.
+**GPL-3.0.** This library includes the Stockfish sources, which are licensed
+under the GNU General Public License version 3, so the library as a whole is
+distributed under the same terms. The complete corresponding source — engine,
+local patches and bridge — is this repository.
 
-For more information about Stockfish, visit [stockfishchess.org](https://stockfishchess.org/)
+Stockfish: <https://github.com/official-stockfish/Stockfish> ·
+<https://stockfishchess.org/>

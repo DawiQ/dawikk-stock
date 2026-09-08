@@ -1,22 +1,39 @@
+// stockfish_bridge.cpp
+// Bridge implementation for Stockfish 19 (NNUE, network loaded from file)
+
 #include "stockfish_bridge.h"
 
-// Teraz dołączamy wszystkie nagłówki C++ w pliku implementacyjnym
 #include <stdio.h>
 #include <unistd.h>
 #include <string>
 #include <vector>
 #include <array>
-#include <algorithm>
 #include <iostream>
+#include <memory>
 #include <cstring>
-#include <cstdlib>
-#include <limits.h>
+#include <fcntl.h>
+#include <poll.h>
 
-#ifdef __APPLE__
-#include <CoreFoundation/CoreFoundation.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+// Debug logging - disabled by default for production
+#ifdef STOCKFISH_DEBUG
+#define BRIDGE_LOG(...) do { __android_log_print(ANDROID_LOG_INFO, "StockfishNative", __VA_ARGS__); } while(0)
+#else
+#define BRIDGE_LOG(...) do {} while(0)
+#endif
+#else
+#define BRIDGE_LOG(...) do { fprintf(stderr, __VA_ARGS__); fflush(stderr); } while(0)
 #endif
 
-// Definicje dla implementacji C++
+// Stockfish 19 headers. Stockfish 19 moved the attack-table initialisation out
+// of bitboard.h into attacks.h, and Bitboards::init() no longer exists.
+#include "attacks.h"
+#include "position.h"
+#include "tune.h"
+#include "uci.h"
+#include "misc.h"
+
 namespace {
     constexpr int NUM_PIPES = 2;
     constexpr int PARENT_WRITE_PIPE = 0;
@@ -24,7 +41,7 @@ namespace {
     constexpr int READ_FD = 0;
     constexpr int WRITE_FD = 1;
 
-    constexpr size_t BUFFER_SIZE = 4096;
+    constexpr size_t BUFFER_SIZE = 8192;
 
     const char* QUITOK = "quitok\n";
     std::array<std::array<int, 2>, NUM_PIPES> pipes;
@@ -32,150 +49,160 @@ namespace {
 
     #define PARENT_READ_FD (pipes[PARENT_READ_PIPE][READ_FD])
     #define PARENT_WRITE_FD (pipes[PARENT_WRITE_PIPE][WRITE_FD])
+
+    // Output accumulator for handling partial reads
+    std::string outputBuffer;
+
+    // Whether `pipes` holds descriptors from a previous stockfish_init(). A
+    // restart used to overwrite them without closing, four fds per restart.
+    bool pipesOpen = false;
 }
 
-// Forward declaration dla funkcji pomocniczych
-#ifdef NO_INCBIN
-extern "C" {
-    // Te zmienne będą normalnie wykorzystywane przez Stockfish
-    const unsigned char        gEvalFile[]        = {0};
-    const unsigned char* const gEvalFileDefaultBig = gEvalFile;
-    const unsigned char* const gEvalFileDefaultSmall = gEvalFile;
-    const size_t               gEvalFileDefaultBigSize = 0;
-    const size_t               gEvalFileDefaultSmallSize = 0;
-}
-#endif
-
-// Dołączenie nagłówków Stockfisha - używamy nazw bez ścieżki bo include_directories są ustawione
-#include "bitboard.h"
-#include "misc.h"
-#include "nnue/features/full_threats.h"
-#include "position.h"
-#include "types.h"
-#include "uci.h"
-#include "tune.h"
-
-// Implementacja funkcji pomocniczej do znajdowania plików NNUE
-std::string find_nnue_file(const std::string& filename) {
-    // Najpierw spróbuj znaleźć plik w obecnym katalogu roboczym
-    FILE* f = fopen(filename.c_str(), "rb");
-    if (f) {
-        fclose(f);
-        return filename;
-    }
-    
-    #ifdef __APPLE__
-    // Spróbuj znaleźć w iOS/macOS bundle
-    CFBundleRef mainBundle = CFBundleGetMainBundle();
-    if (mainBundle) {
-        CFStringRef cfFilename = CFStringCreateWithCString(NULL, filename.c_str(), kCFStringEncodingUTF8);
-        CFURLRef resourceURL = CFBundleCopyResourceURL(mainBundle, cfFilename, NULL, NULL);
-        
-        if (resourceURL) {
-            char path[PATH_MAX];
-            if (CFURLGetFileSystemRepresentation(resourceURL, true, (UInt8*)path, PATH_MAX)) {
-                CFRelease(resourceURL);
-                CFRelease(cfFilename);
-                return std::string(path);
-            }
-            CFRelease(resourceURL);
-        }
-        CFRelease(cfFilename);
-    }
-    #endif
-    
-    // Spróbuj znaleźć w katalogu ustawionym przez środowisko (Android)
-    const char* filesDir = std::getenv("STOCKFISH_FILES_DIR");
-    if (filesDir) {
-        std::string path = std::string(filesDir) + "/" + filename;
-        f = fopen(path.c_str(), "rb");
-        if (f) {
-            fclose(f);
-            return path;
-        }
-    }
-    
-    // Jeśli nie znaleziono, zwróć oryginalną nazwę
-    return filename;
-}
-
-// Dodajemy obejście problemu z NNUE
-#ifdef NO_INCBIN
-namespace Stockfish {
-namespace Eval {
-namespace NNUE {
-// Te funkcje będą używane przez Stockfisha do ładowania plików NNUE
-std::string get_big_nnue_path() {
-    return find_nnue_file("nn-1111cefa1111.nnue");
-}
-
-std::string get_small_nnue_path() {
-    return find_nnue_file("nn-baff1ede1f90.nnue");
-}
-}
-}
-}
-#endif
-
-// Implementacja API C
+// Implementation of C API
 extern "C" {
 
 int stockfish_init(void) {
+    BRIDGE_LOG("stockfish_init() starting");
+
+    if (pipesOpen) {
+        for (auto& p : pipes) {
+            for (int fd : p) {
+                if (fd >= 0) close(fd);
+            }
+        }
+        pipesOpen = false;
+    }
+
     // Create communication pipes
-    pipe(pipes[PARENT_READ_PIPE].data());
-    pipe(pipes[PARENT_WRITE_PIPE].data());
+    if (pipe(pipes[PARENT_READ_PIPE].data()) < 0) {
+        BRIDGE_LOG("Failed to create read pipe");
+        return -1;
+    }
+    if (pipe(pipes[PARENT_WRITE_PIPE].data()) < 0) {
+        BRIDGE_LOG("Failed to create write pipe");
+        close(pipes[PARENT_READ_PIPE][READ_FD]);
+        close(pipes[PARENT_READ_PIPE][WRITE_FD]);
+        return -1;
+    }
+    pipesOpen = true;
+
+    BRIDGE_LOG("Pipes created: read_fd=%d, write_fd=%d", PARENT_READ_FD, PARENT_WRITE_FD);
+
+    // Set read end to non-blocking
+    int flags = fcntl(PARENT_READ_FD, F_GETFL, 0);
+    fcntl(PARENT_READ_FD, F_SETFL, flags | O_NONBLOCK);
+
+    outputBuffer.clear();
+    BRIDGE_LOG("stockfish_init() completed");
     return 0;
 }
 
 int stockfish_main(void) {
-    // Redirect stdin and stdout through our pipes
+    using namespace Stockfish;
+    BRIDGE_LOG("stockfish_main() starting");
+
+    // Redirect stdin to read from our pipe (this is needed for input)
     dup2(pipes[PARENT_WRITE_PIPE][READ_FD], STDIN_FILENO);
+    BRIDGE_LOG("stdin redirected");
+
+    // Redirect stdout through our pipe (this is needed for output)
     dup2(pipes[PARENT_READ_PIPE][WRITE_FD], STDOUT_FILENO);
+    BRIDGE_LOG("stdout redirected");
 
-    // Initialize Stockfish components
-    Stockfish::Bitboards::init();
-    Stockfish::Position::init();
-    Stockfish::Eval::NNUE::Features::init_threat_offsets();
+    // Stockfish 19 startup sequence (mirrors src/main.cpp).
+    // The NNUE network is NOT embedded in the binary (built with NNUE_EMBEDDING_OFF);
+    // the native layer points EvalFile at the downloaded .nnue file by sending a
+    // "setoption" command immediately after the engine starts. Stockfish 19 retired
+    // the second (small) network, so there is only one file and one option now.
+    BRIDGE_LOG("Initializing attack tables...");
+    Attacks::init();
+    BRIDGE_LOG("Initializing Position...");
+    Position::init();
 
-    // Start the UCI engine
-    int argc = 1;
-    char* argv[] = {const_cast<char*>("")};
-    Stockfish::UCIEngine uci(argc, argv);
-    Stockfish::Tune::init(uci.engine_options());
+    // argv[0] is only used to derive a binary directory we don't rely on,
+    // since the network path is provided as an absolute path at runtime.
+    // CommandLine keeps the char** as-is (it does not copy on POSIX), and
+    // UCIEngine stores it, so argv has to outlive `uci` — hence the named local.
+    char  arg0[] = "stockfish";
+    char* argv[] = {arg0, nullptr};
 
-    // This will block until the engine receives the "quit" command
-    uci.loop();
+    BRIDGE_LOG("Creating UCI engine...");
+    auto uci = std::make_unique<UCIEngine>(CommandLine(1, argv));
 
+    Tune::init(uci->engine_options());
+
+    std::cout << engine_info() << std::endl;
+
+    BRIDGE_LOG("Starting UCI loop...");
+    // Start the UCI loop - this will block until "quit" command
+    uci->loop();
+
+    BRIDGE_LOG("UCI loop ended, cleaning up...");
     std::cout << QUITOK << std::flush;
+    BRIDGE_LOG("stockfish_main() finished");
     return 0;
 }
 
 const char* stockfish_stdout_read(void) {
-    static std::string output;
-    output.clear();
+    static std::string result;
+    result.clear();
 
-    ssize_t bytesRead;
-    while ((bytesRead = read(PARENT_READ_FD, buffer.data(), BUFFER_SIZE)) > 0) {
-        output.append(buffer.data(), bytesRead);
-        if (output.back() == '\n' || output.find(QUITOK) != std::string::npos) {
-            break;
+    // Use poll to check for available data with timeout
+    struct pollfd pfd;
+    pfd.fd = PARENT_READ_FD;
+    pfd.events = POLLIN;
+
+    // Poll with 10ms timeout
+    int ret = poll(&pfd, 1, 10);
+
+    if (ret > 0 && (pfd.revents & POLLIN)) {
+        // Data available - read it
+        ssize_t bytesRead;
+        while ((bytesRead = read(PARENT_READ_FD, buffer.data(), BUFFER_SIZE - 1)) > 0) {
+            buffer[bytesRead] = '\0';
+            outputBuffer.append(buffer.data(), bytesRead);
         }
     }
 
-    if (bytesRead < 0) {
-        // Handle error
-        return nullptr;
+    // Check if we have complete lines in the buffer
+    size_t newlinePos = outputBuffer.find('\n');
+    if (newlinePos != std::string::npos) {
+        // Extract all complete lines
+        result = outputBuffer.substr(0, newlinePos + 1);
+        outputBuffer.erase(0, newlinePos + 1);
+
+        // Return additional complete lines if available
+        while ((newlinePos = outputBuffer.find('\n')) != std::string::npos) {
+            result += outputBuffer.substr(0, newlinePos + 1);
+            outputBuffer.erase(0, newlinePos + 1);
+        }
+
+        return result.c_str();
     }
 
-    return output.c_str();
+    // Check for quitok
+    if (outputBuffer.find(QUITOK) != std::string::npos) {
+        result = outputBuffer;
+        outputBuffer.clear();
+        return result.c_str();
+    }
+
+    return nullptr;
 }
 
 int stockfish_stdin_write(const char* data) {
-    ssize_t bytesWritten = write(PARENT_WRITE_FD, data, strlen(data));
+    if (data == nullptr) {
+        return 0;
+    }
+
+    size_t len = strlen(data);
+    ssize_t bytesWritten = write(PARENT_WRITE_FD, data, len);
+
     // Ensure proper line ending
-    if (bytesWritten > 0 && data[strlen(data) - 1] != '\n') {
+    if (bytesWritten > 0 && len > 0 && data[len - 1] != '\n') {
         write(PARENT_WRITE_FD, "\n", 1);
     }
+
     return bytesWritten >= 0 ? 1 : 0;
 }
 

@@ -10,102 +10,62 @@ Pod::Spec.new do |s|
   s.license      = package["license"]
   s.authors      = package["author"]
 
-  s.platforms    = { :ios => "11.0" }
+  s.platforms    = { :ios => "15.1" }
   s.source       = { :git => "https://github.com/DawiQ/dawikk-stock.git", :tag => "#{s.version}" }
 
+  # Stockfish 19 sources (NNUE, network loaded from file). cpp/stockfish/universal
+  # is not vendored: it holds upstream's runtime-CPU-dispatch binary, and we ship a
+  # single arm64 slice instead.
   s.source_files = [
-    "ios/**/*.{h,m,mm}", 
+    "ios/**/*.{h,m,mm}",
     "cpp/bridge/**/*.{h,cpp}",
     "cpp/stockfish/*.{h,cpp}",
     "cpp/stockfish/nnue/*.{h,cpp}",
     "cpp/stockfish/nnue/features/*.{h,cpp}",
     "cpp/stockfish/nnue/layers/*.h",
-    "cpp/stockfish/syzygy/*.{h,cpp}"
+    "cpp/stockfish/syzygy/*.{h,cpp}",
+    "cpp/stockfish/incbin/*.h"
   ]
-  
+
   s.private_header_files = "cpp/bridge/stockfish_bridge.h"
 
+  # Exclude main.cpp from Stockfish sources (it defines main())
   s.exclude_files = "cpp/stockfish/main.cpp"
 
-  # Download NNUE files before build
-  s.prepare_command = <<-CMD
-    # Download to cpp directory if not exists
-    if [ ! -f cpp/nn-37f18f62d772.nnue ]; then
-      echo "Downloading nn-37f18f62d772.nnue..."
-      curl -L -o cpp/nn-37f18f62d772.nnue https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
-    fi
-    if [ ! -f cpp/nn-c0ae49f08b40.nnue ]; then
-      echo "Downloading nn-c0ae49f08b40.nnue..."
-      curl -L -o cpp/nn-c0ae49f08b40.nnue https://tests.stockfishchess.org/api/nn/nn-c0ae49f08b40.nnue
-    fi
-    
-    # INCBIN searches relative to source file location (cpp/stockfish/nnue/network.cpp)
-    # So we need files in cpp/stockfish/nnue/
-    mkdir -p cpp/stockfish/nnue
-    cp cpp/nn-37f18f62d772.nnue cpp/stockfish/nnue/nn-37f18f62d772.nnue 2>/dev/null || true
-    cp cpp/nn-c0ae49f08b40.nnue cpp/stockfish/nnue/nn-c0ae49f08b40.nnue 2>/dev/null || true
-    
-    # Also in cpp/stockfish/ as backup
-    cp cpp/nn-37f18f62d772.nnue cpp/stockfish/nn-37f18f62d772.nnue 2>/dev/null || true
-    cp cpp/nn-c0ae49f08b40.nnue cpp/stockfish/nn-c0ae49f08b40.nnue 2>/dev/null || true
-  CMD
-  
-  # Add script phase to ensure NNUE files are in place before compilation
-  s.script_phases = [
-    {
-      :name => 'Copy NNUE Files Before Compile',
-      :script => '
-        set -e
-        NNUE_SOURCE="${PODS_TARGET_SRCROOT}/cpp"
-        NNUE_DEST1="${PODS_TARGET_SRCROOT}/cpp/stockfish/nnue"
-        NNUE_DEST2="${PODS_TARGET_SRCROOT}/cpp/stockfish"
-        
-        echo "Copying NNUE files for compilation..."
-        
-        mkdir -p "$NNUE_DEST1"
-        mkdir -p "$NNUE_DEST2"
-        
-        if [ -f "${NNUE_SOURCE}/nn-37f18f62d772.nnue" ]; then
-          cp -f "${NNUE_SOURCE}/nn-37f18f62d772.nnue" "${NNUE_DEST1}/"
-          cp -f "${NNUE_SOURCE}/nn-37f18f62d772.nnue" "${NNUE_DEST2}/"
-          echo "Copied nn-37f18f62d772.nnue"
-        else
-          echo "ERROR: nn-37f18f62d772.nnue not found!"
-          exit 1
-        fi
-        
-        if [ -f "${NNUE_SOURCE}/nn-c0ae49f08b40.nnue" ]; then
-          cp -f "${NNUE_SOURCE}/nn-c0ae49f08b40.nnue" "${NNUE_DEST1}/"
-          cp -f "${NNUE_SOURCE}/nn-c0ae49f08b40.nnue" "${NNUE_DEST2}/"
-          echo "Copied nn-c0ae49f08b40.nnue"
-        else
-          echo "ERROR: nn-c0ae49f08b40.nnue not found!"
-          exit 1
-        fi
-        
-        ls -la "${NNUE_DEST1}/"*.nnue || true
-      ',
-      :execution_position => :before_compile
-    }
-  ]
-  
-  # Include NNUE files as resources - they will be loaded at runtime
-  s.resources = ["cpp/*.nnue"]
-  
-  # Preserve NNUE files in multiple locations
-  s.preserve_paths = "cpp/*.nnue", "cpp/stockfish/*.nnue", "cpp/stockfish/nnue/*.nnue"
-  
-  s.compiler_flags = '-Wno-comma -Wno-deprecated-declarations'
-  
-  s.pod_target_xcconfig = { 
+  # The NNUE network is NOT bundled: ~94 MB would be most of the App Store
+  # download. It is fetched into Application Support/nnue on first use by
+  # NnueDownloader and handed to the engine through the EvalFile UCI option.
+  # Stockfish 19 retired the second (small) network, so there is one file now.
+
+  # Network.framework: NnueDownloader asks whether the only path out is a
+  # metered one before it starts a 94 MB transfer.
+  s.frameworks = "Network"
+
+  # -fconstexpr-steps: Stockfish 19 builds its attack tables at compile time and
+  # blows past Clang's default 1,048,576-step constexpr budget doing it. Upstream's
+  # own Makefile passes exactly this for every clang target; without it attacks.cpp
+  # fails with "constexpr evaluation hit maximum step limit".
+  s.compiler_flags = '-Wno-comma -Wno-deprecated-declarations -Wno-shorten-64-to-32 -Wno-unused-variable -fconstexpr-steps=500000000'
+
+  s.pod_target_xcconfig = {
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++17",
     "CLANG_CXX_LIBRARY" => "libc++",
-    "HEADER_SEARCH_PATHS" => "\"$(PODS_TARGET_SRCROOT)/cpp/stockfish\" \"$(PODS_TARGET_SRCROOT)/cpp/bridge\""
-  }
-  
-  s.user_target_xcconfig = {
-    "GCC_PREPROCESSOR_DEFINITIONS" => "NNUE_EMBEDDING_OFF=1 USE_PTHREADS=1 NDEBUG=1 IS_64BIT=1",
-    "OTHER_CPLUSPLUSFLAGS" => "-DNNUE_EMBEDDING_OFF -DUSE_PTHREADS -DNDEBUG -DIS_64BIT"
+    "HEADER_SEARCH_PATHS" => "\"$(PODS_TARGET_SRCROOT)/cpp/stockfish\" \"$(PODS_TARGET_SRCROOT)/cpp/bridge\"",
+    # Common defines. NNUE_EMBEDDING_OFF keeps the binary small: the network is
+    # loaded from the downloaded .nnue file via the EvalFile UCI option instead of
+    # being embedded with incbin.
+    #
+    # STOCKFISH_EMBEDDED switches off the std::exit(1) that Stockfish 19 added to
+    # UCIEngine::terminate_on_critical_error. Upstream runs as its own process, so
+    # ending it on a malformed FEN or an illegal move costs nothing; here the engine
+    # shares the app's process and that exit would take the app down with it. See
+    # the LOCAL PATCH comments in cpp/stockfish/uci.{h,cpp}.
+    "GCC_PREPROCESSOR_DEFINITIONS" => "USE_PTHREADS=1 NDEBUG=1 IS_64BIT=1 NNUE_EMBEDDING_OFF=1 STOCKFISH_EMBEDDED=1 USE_POPCNT=1 USE_PREFETCH=1",
+    # ARM64 (iOS devices + Apple Silicon simulator) use NEON SIMD.
+    # Dot-product is intentionally NOT enabled so the binary runs on A9/A10
+    # devices still supported by the iOS 15.1 deployment target. x86_64
+    # (Intel simulator) falls back to the scalar NNUE path.
+    "OTHER_CPLUSPLUSFLAGS[arch=arm64]" => "-DUSE_NEON=8"
   }
 
   s.dependency "React-Core"
