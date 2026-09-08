@@ -1,10 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.dawikk.stockfish">
-
-    <!-- Stockfish nie wymaga specjalnych uprawnień, ponieważ działa całkowicie lokalnie -->
-    <!-- Dodaj tutaj uprawnienia, jeśli w przyszłości będą potrzebne -->
-    
-    <!-- Biblioteka nie deklaruje żadnych aktywności, serwisów ani innych komponentów -->
-
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- The NNUE networks are downloaded after install (NnueDownloader.kt). -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 </manifest>

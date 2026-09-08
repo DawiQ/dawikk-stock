@@ -1,3 +1,6 @@
+// stockfish_bridge.h
+// Bridge header for Stockfish 19 (NNUE, network loaded from file)
+
 #ifndef STOCKFISH_BRIDGE_H
 #define STOCKFISH_BRIDGE_H
 
