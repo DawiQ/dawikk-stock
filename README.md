@@ -3,10 +3,17 @@
 Stockfish **19** for React Native — iOS and Android, running in-process, driven over UCI.
 
 The engine is compiled from the Stockfish 19 sources vendored in `cpp/stockfish/`.
-The NNUE network is **not** bundled: it is ~94 MB, which would be most of the store
-download, so it is fetched on first use into a per-app directory that is kept out of
-device backups, verified by sha256, and handed to the engine through the `EvalFile`
-UCI option.
+
+**The NNUE network is not in this repository, and it is not in your app binary
+either.** It is a single ~94 MB file — most of a store download, and content
+rather than code — so nothing here carries it: no `.nnue` file is checked in
+(`.gitignore` blocks them), the npm package does not ship one, and the engine is
+built with `NNUE_EMBEDDING_OFF` so it is not linked in with `incbin` the way
+upstream does it. Instead the library downloads the network on first use into a
+per-app directory kept out of device backups, verifies it by sha256, and points
+the engine at it through the `EvalFile` UCI option. Until that download has
+finished the engine cannot start: `init()` resolves `false` and an
+`NNUE_MISSING` error reaches every error listener.
 
 ## Features
 
@@ -98,6 +105,7 @@ NnueNetworks.approxTotalBytes;  // 98511183
 
 await NnueNetworks.getStatus(); // NnueStatus (per-file ready/bytes/partialBytes, freeBytes)
 await NnueNetworks.isReady();
+NnueNetworks.isDownloading;     // true while a download started here is running
 await NnueNetworks.download({ sources, allowMetered, onProgress });
 await NnueNetworks.cancel();    // partial .part file is kept and resumed later
 await NnueNetworks.remove();    // engine must be stopped first
@@ -159,6 +167,21 @@ Stockfish.addErrorListener((error: StockfishError) => {});
 `addErrorListener` replays the most recent error to a listener that subscribes
 after it fired, so a failure during `init()` is not lost to a late subscriber.
 
+For callers that would rather hold on to the function than to the unsubscriber,
+`removeMessageListener`, `removeAnalysisListener`, `removeBestMoveListener` and
+`removeErrorListener` take the original listener and do the same thing.
+
+Underneath, these are the native events the module emits — useful if you attach
+to `StockfishEventEmitter` (also exported) directly:
+
+| Event | Payload |
+|---|---|
+| `stockfish-output` | `string` — one raw line of engine output |
+| `stockfish-analyzed-output` | `AnalysisData` or `BestMoveData` |
+| `stockfish-error` | `StockfishError` |
+| `stockfish-nnue-progress` | `NnueProgress` |
+| `stockfish-nnue-ready` | `NnueStatus` |
+
 Error codes:
 
 | Code | Meaning |
@@ -187,6 +210,95 @@ Stockfish.setConfig({
 Turning off what you do not consume is the cheapest optimization here: for a game
 against the computer keep only `emitBestMove`; for analysis keep only
 `emitAnalysis`.
+
+### Types
+
+Everything below is exported from the package entry point.
+
+```typescript
+interface AnalysisOptions {
+  depth?: number;      // default 20
+  multiPv?: number;    // default 1
+  movetime?: number;   // ms
+  nodes?: number;
+}
+
+interface AnalysisData {
+  type: 'info' | 'bestmove';
+  depth?: number;
+  score?: number;      // centipawns
+  mate?: number;       // mate in N, when the line is forced
+  bestMove?: string;
+  line?: string;
+  move?: string;
+
+  // MultiPV: one entry per line, index-aligned across all four arrays.
+  // `evaluations` holds either a centipawn number as a string, or `M<n>` for a
+  // mate — exactly one entry per PV, so it never desyncs from `bestMoves`.
+  bestMoves?: string[];
+  evaluations?: string[];
+  lines?: string[];
+  depths?: number[];
+}
+
+interface BestMoveData {
+  type: 'bestmove';
+  move: string;        // '' for "bestmove (none)" — mate or stalemate
+  ponder?: string;
+}
+
+interface StockfishError {
+  code: 'NNUE_MISSING' | 'NNUE_LOAD_FAILED' | 'ENGINE_UNAVAILABLE'
+      | 'ENGINE_CRITICAL_ERROR' | string;
+  message: string;
+}
+
+interface StockfishConfig {
+  throttling: { analysisInterval: number; messageInterval: number };
+  events: { emitMessage: boolean; emitAnalysis: boolean; emitBestMove: boolean };
+}
+
+interface NnueFileStatus {
+  name: string;          // "nn-1a298aa575a0.nnue"
+  path: string;          // absolute path the engine is pointed at
+  ready: boolean;        // present and verified
+  bytes: number;
+  partialBytes: number;  // bytes of a .part transfer waiting to be resumed
+  approxBytes: number;
+}
+
+interface NnueStatus {
+  ready: boolean;        // every network present and verified
+  directory: string;
+  files: NnueFileStatus[];
+  approxTotalBytes: number;
+  bytesOnDisk: number;
+  freeBytes: number;
+}
+
+interface NnueProgress {
+  name: string;
+  index: number;              // file being fetched, among those still missing
+  count: number;
+  bytesWritten: number;       // current file
+  bytesTotal: number;         // current file
+  progress: number;           // 0..1, current file
+  totalProgress: number;      // 0..1, whole download
+  totalBytesWritten: number;  // whole download
+  totalBytesTotal: number;    // whole download
+}
+
+interface NnueDownloadOptions {
+  sources?: string[];
+  allowMetered?: boolean;     // default false — Wi-Fi only
+  onProgress?: (progress: NnueProgress) => void;
+}
+```
+
+`bytesWritten`/`bytesTotal` are the file in flight; `totalBytesWritten`/
+`totalBytesTotal` are the whole download and are the pair that belongs next to
+`totalProgress`. Rendering the first pair beside the overall percentage reads as
+"97% — 1 MB / 4 MB".
 
 ### Multiple instances
 
